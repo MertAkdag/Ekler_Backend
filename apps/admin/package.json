@@ -1,0 +1,11 @@
+{
+  "name": "@ekler/admin",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "echo \"(admin) build: placeholder until Phase 5\"",
+    "typecheck": "echo \"(admin) typecheck: placeholder until Phase 5\"",
+    "lint": "echo \"(admin) lint: placeholder\"",
+    "test": "echo \"(admin) test: placeholder\""
+  }
+}

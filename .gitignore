@@ -1,0 +1,24 @@
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+coverage/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# drizzle introspection-only: we keep schema.ts/relations.ts/index.ts, not the
+# migration snapshot/journal (Drizzle never owns DDL here — Supabase migrations do).
+apps/api/src/db/schema/*.sql
+apps/api/src/db/schema/meta/
+
+# logs / os
+*.log
+.DS_Store
+
+# editor
+.idea/
+.vscode/*
+!.vscode/extensions.json

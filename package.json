@@ -1,0 +1,21 @@
+{
+  "name": "ekler-backend",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "dev:api": "pnpm --filter @ekler/api dev",
+    "db:pull": "pnpm --filter @ekler/api db:pull",
+    "db:check": "pnpm --filter @ekler/api db:check"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.2"
+  }
+}
