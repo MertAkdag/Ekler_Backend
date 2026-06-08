@@ -2,10 +2,28 @@
   "name": "@ekler/admin",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "build": "echo \"(admin) build: placeholder until Phase 5\"",
-    "typecheck": "echo \"(admin) typecheck: placeholder until Phase 5\"",
-    "lint": "echo \"(admin) lint: placeholder\"",
-    "test": "echo \"(admin) test: placeholder\""
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"(admin) lint: skip\"",
+    "test": "echo \"(admin) test: skip\""
+  },
+  "dependencies": {
+    "@adminjs/express": "^6.1.0",
+    "@adminjs/sql": "^2.1.1",
+    "adminjs": "^7.8.13",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-formidable": "^1.2.0",
+    "express-session": "^1.18.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/express-session": "^1.18.1",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "~5.9.2"
   }
 }

@@ -17,5 +17,11 @@
   },
   "devDependencies": {
     "typescript": "~5.9.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "@tiptap/core": "2.27.2",
+      "@tiptap/pm": "2.27.2"
+    }
   }
 }

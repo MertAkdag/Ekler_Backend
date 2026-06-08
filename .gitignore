@@ -4,6 +4,9 @@ build/
 *.tsbuildinfo
 coverage/
 
+# AdminJS bundled frontend assets
+.adminjs/
+
 # env
 .env
 .env.local

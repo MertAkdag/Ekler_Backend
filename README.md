@@ -26,7 +26,7 @@ nvm use                 # node 22
 corepack enable
 pnpm install
 cp .env.example apps/api/.env   # değerleri doldur (en azından DATABASE_URL + SUPABASE_*)
-pnpm dev:api            # http://localhost:3000/v1/health
+pnpm dev:api            # http://localhost:3010/v1/health
 ```
 
 ### Drizzle — mevcut şemayı çek (introspection-only)
