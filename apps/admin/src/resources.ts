@@ -332,17 +332,18 @@ export function buildResources(publicDb: SqlDatabase, authDb: SqlDatabase): Reso
     const actions = (SHOW_COMPONENT_TABLES.has(cfg.table)
       ? { ...baseActions, show: { component: Components.RecordShow } }
       : baseActions) as ResourceOptions['actions']
-    return {
-      resource,
-      options: {
-        navigation: { name: cfg.nav },
-        sort: cfg.sort,
-        listProperties: cfg.list,
-        showProperties: cfg.show,
-        editProperties: cfg.edit,
-        properties: buildProperties(resource, cfg),
-        actions,
-      },
+    // Only include showProperties/editProperties when actually set: AdminJS spreads
+    // list-option arrays unconditionally (build-feature.js), so a present-but-undefined
+    // key (`[...undefined]`) crashes boot with "is not iterable".
+    const options: ResourceOptions = {
+      navigation: { name: cfg.nav },
+      sort: cfg.sort,
+      listProperties: cfg.list,
+      properties: buildProperties(resource, cfg),
+      actions,
     }
+    if (cfg.show) options.showProperties = cfg.show
+    if (cfg.edit) options.editProperties = cfg.edit
+    return { resource, options }
   })
 }
