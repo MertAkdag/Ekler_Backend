@@ -3,6 +3,7 @@ import { CoreModule } from './core/core.module'
 import { HealthModule } from './modules/health/health.module'
 import { MeModule } from './modules/me/me.module'
 import { CatalogModule } from './modules/catalog/catalog.module'
+import { ConfessionsModule } from './modules/confessions/confessions.module'
 
 /**
  * Root module. CoreModule is the cross-cutting backbone (guards, pipe,
@@ -12,6 +13,6 @@ import { CatalogModule } from './modules/catalog/catalog.module'
  *   P3: ModerationModule, ReportsModule  ...
  */
 @Module({
-  imports: [CoreModule, HealthModule, MeModule, CatalogModule],
+  imports: [CoreModule, HealthModule, MeModule, CatalogModule, ConfessionsModule],
 })
 export class AppModule {}
