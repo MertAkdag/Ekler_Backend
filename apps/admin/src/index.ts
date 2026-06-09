@@ -7,7 +7,12 @@ import { TR_TRANSLATIONS } from './translations.js'
 import { buildResources } from './resources.js'
 import { Components, componentLoader } from './components.js'
 import { dashboardHandler } from './stats.js'
-import { citiesHubHandler, universitiesHubHandler } from './hubs.js'
+import {
+  citiesHubHandler,
+  cityGroupedHandler,
+  universitiesHubHandler,
+  universityGroupedHandler,
+} from './hubs.js'
 
 /**
  * Ekler Admin — v2.
@@ -53,8 +58,18 @@ const start = async (): Promise<void> => {
     componentLoader,
     dashboard: { component: Components.Dashboard, handler: dashboardHandler },
     pages: {
-      citiesHub: { component: Components.Hub, handler: citiesHubHandler, icon: 'Map' },
+      // cross hubs (dimension → all related content)
       universitiesHub: { component: Components.Hub, handler: universitiesHubHandler, icon: 'Award' },
+      citiesHub: { component: Components.Hub, handler: citiesHubHandler, icon: 'Map' },
+      // per-resource grouped landings (one resource grouped by its dimension)
+      profilesByUni: { component: Components.Hub, handler: universityGroupedHandler('profiles', 'Profil', 'Profiller — Üniversiteye göre'), icon: 'User' },
+      confessionsByUni: { component: Components.Hub, handler: universityGroupedHandler('confessions', 'İtiraf', 'İtiraflar — Üniversiteye göre'), icon: 'MessageSquare' },
+      notesByUni: { component: Components.Hub, handler: universityGroupedHandler('notes', 'Not', 'Notlar — Üniversiteye göre'), icon: 'FileText' },
+      communitiesByUni: { component: Components.Hub, handler: universityGroupedHandler('communities', 'Topluluk', 'Topluluklar — Üniversiteye göre'), icon: 'Users' },
+      sessionsByUni: { component: Components.Hub, handler: universityGroupedHandler('study_sessions', 'Oturum', 'Çalışma Oturumları — Üniversiteye göre'), icon: 'Calendar' },
+      coursesByUni: { component: Components.Hub, handler: universityGroupedHandler('courses', 'Ders', 'Dersler — Üniversiteye göre'), icon: 'BookOpen' },
+      eventsByCity: { component: Components.Hub, handler: cityGroupedHandler('city_events', 'Etkinlik', 'Şehir Etkinlikleri — Şehre göre'), icon: 'Calendar' },
+      submissionsByCity: { component: Components.Hub, handler: cityGroupedHandler('event_submissions', 'Başvuru', 'Etkinlik Başvuruları — Şehre göre'), icon: 'Inbox' },
     },
     locale: {
       language: 'tr',

@@ -239,7 +239,15 @@ export const TR_TRANSLATIONS = {
   },
   // Custom page sidebar labels (i18n key: pages.<pageName>).
   pages: {
-    citiesHub: 'Şehirler',
     universitiesHub: 'Üniversiteler',
+    citiesHub: 'Şehirler',
+    profilesByUni: 'Profiller',
+    confessionsByUni: 'İtiraflar',
+    notesByUni: 'Notlar',
+    communitiesByUni: 'Topluluklar',
+    sessionsByUni: 'Çalışma Oturumları',
+    coursesByUni: 'Dersler',
+    eventsByCity: 'Şehir Etkinlikleri',
+    submissionsByCity: 'Etkinlik Başvuruları',
   },
 }

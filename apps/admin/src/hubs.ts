@@ -38,6 +38,64 @@ export interface HubPayload {
 
 const n = (v: string | undefined): number => Number(v ?? 0)
 
+// Resources interpolated into SQL come ONLY from these allowlists (never user input),
+// so the per-resource grouped factories below can't be turned into injection.
+const UNI_RESOURCES = new Set(['profiles', 'confessions', 'notes', 'communities', 'study_sessions', 'courses'])
+const CITY_RESOURCES = new Set(['city_events', 'event_submissions'])
+
+/**
+ * Per-resource grouped landing: one resource grouped by university. Each university
+ * card shows that resource's count (a clickable chip) → drills into the flat list
+ * filtered by university_domain. Reuses the same generic Hub component.
+ */
+export function universityGroupedHandler(resourceId: string, chipLabel: string, title: string) {
+  if (!UNI_RESOURCES.has(resourceId)) throw new Error(`Unknown university resource: ${resourceId}`)
+  return async (): Promise<HubPayload> => {
+    const { rows } = await pool.query<{ domain: string; name: string; cnt: string }>(`
+      select
+        u.domain as domain,
+        u.name   as name,
+        (select count(*) from public.${resourceId} t where t.university_domain = u.domain) as cnt
+      from public.universities u
+      order by u.name asc
+      limit 500
+    `)
+    return {
+      title,
+      rows: rows.map((r) => ({
+        id: r.domain,
+        label: r.name,
+        sublabel: r.domain,
+        chips: [{ label: chipLabel, count: n(r.cnt), href: listHref(resourceId, 'university_domain', r.domain) }],
+      })),
+    }
+  }
+}
+
+/** Per-resource grouped landing: one resource grouped by city (exact city_id filter). */
+export function cityGroupedHandler(resourceId: string, chipLabel: string, title: string) {
+  if (!CITY_RESOURCES.has(resourceId)) throw new Error(`Unknown city resource: ${resourceId}`)
+  return async (): Promise<HubPayload> => {
+    const { rows } = await pool.query<{ id: string; name: string; cnt: string }>(`
+      select
+        c.id   as id,
+        c.name as name,
+        (select count(*) from public.${resourceId} t where t.city_id = c.id) as cnt
+      from public.cities c
+      order by c.name asc
+      limit 500
+    `)
+    return {
+      title,
+      rows: rows.map((r) => ({
+        id: r.id,
+        label: r.name,
+        chips: [{ label: chipLabel, count: n(r.cnt), href: listHref(resourceId, 'city_id', r.id) }],
+      })),
+    }
+  }
+}
+
 /**
  * University hub — group by universities.domain. Counts use the canonical domain
  * (NOT alias-resolved) so the chip count and the filtered list it links to scope
