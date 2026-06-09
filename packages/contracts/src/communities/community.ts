@@ -12,6 +12,29 @@ export const communityFeedQuerySchema = z.object({
 })
 export type CommunityFeedQuery = z.infer<typeof communityFeedQuerySchema>
 
+export const communityCategorySchema = z.enum([
+  'academic',
+  'sports',
+  'arts',
+  'tech',
+  'social',
+  'general',
+])
+export const communityJoinTypeSchema = z.enum(['open', 'approval', 'invite'])
+
+/** Create a community. university_domain + owner are server-set; owner auto-joins. */
+export const createCommunityBodySchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  description: z.string().max(2000).nullable().default(null),
+  category: communityCategorySchema,
+  joinType: communityJoinTypeSchema.default('open'),
+  avatarUrl: z.string().nullable().default(null),
+})
+export type CreateCommunityBody = z.infer<typeof createCommunityBodySchema>
+
+export const createCommunityResultSchema = z.object({ id: z.string() })
+export type CreateCommunityResult = z.infer<typeof createCommunityResultSchema>
+
 /** One feed row — the 8 columns the RN selects + the caller's membership fields. */
 export const communityFeedRowSchema = z.object({
   id: z.string(),

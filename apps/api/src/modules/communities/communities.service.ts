@@ -1,9 +1,15 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { and, eq, sql } from 'drizzle-orm'
-import type { CommunityFeedQuery, CommunityFeedRow } from '@ekler/contracts'
+import type {
+  CommunityFeedQuery,
+  CommunityFeedRow,
+  CreateCommunityBody,
+  CreateCommunityResult,
+} from '@ekler/contracts'
 import { DRIZZLE, type Db } from '../../db/drizzle.module'
 import { ScopedRepository } from '../../db/scoped/scoped-repository'
 import { communities, communityMembers } from '../../db/schema'
+import { AppError } from '../../core/errors/app-error'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 
 /**
@@ -55,5 +61,40 @@ export class CommunitiesService {
       .where(and(...where))
 
     return rows as CommunityFeedRow[]
+  }
+
+  /**
+   * Create a community + auto-join the owner, ATOMICALLY (the RN did a non-atomic
+   * insert-then-manual-rollback). university_domain + owner_id are server-set (anti-K-1).
+   *
+   * member_count is deliberately NOT set: sync_community_member_count is a DELTA trigger
+   * (+1 on an active member insert), so the owner insert takes it 0 → 1. The RN set
+   * member_count:1 AND inserted the owner, double-counting to 2 — this fixes that.
+   */
+  async create(input: CreateCommunityBody, user: AuthPrincipal): Promise<CreateCommunityResult> {
+    const domain = this.scope.domain()
+    const uid = user.userId
+
+    return this.db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(communities)
+        .values({
+          ownerId: uid,
+          universityDomain: domain,
+          name: input.name,
+          description: input.description,
+          category: input.category,
+          joinType: input.joinType,
+          avatarUrl: input.avatarUrl,
+        })
+        .returning({ id: communities.id })
+      const id = inserted[0]?.id
+      if (!id) throw new AppError('INTERNAL', 'Topluluk oluşturulamadı.')
+
+      await tx
+        .insert(communityMembers)
+        .values({ communityId: id, userId: uid, role: 'owner', status: 'active' })
+      return { id }
+    })
   }
 }
