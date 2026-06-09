@@ -5,6 +5,7 @@ import { sql } from 'drizzle-orm'
 import {
   createRemoteJWKSet,
   jwtVerify,
+  decodeProtectedHeader,
   type JWTPayload,
   type JWTVerifyGetKey,
 } from 'jose'
@@ -13,6 +14,7 @@ import { DRIZZLE, type Db } from '../../db/drizzle.module'
 import { AppError } from '../errors/app-error'
 import type { AppClsStore, AuthPrincipal } from '../cls/cls-store'
 import { IS_PUBLIC_KEY } from './public.decorator'
+import { TokenService, OWN_KIDS } from '../../modules/auth/token.service'
 
 /**
  * Dual-accept auth bridge.
@@ -38,6 +40,7 @@ export class AuthGuard implements CanActivate {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly reflector: Reflector,
     private readonly cls: ClsService<AppClsStore>,
+    private readonly tokens: TokenService,
   ) {
     if (env.SUPABASE_JWKS_URL) {
       this.jwks = createRemoteJWKSet(new URL(env.SUPABASE_JWKS_URL))
@@ -57,11 +60,11 @@ export class AuthGuard implements CanActivate {
     const token = this.extractBearer(req.headers?.authorization)
     if (!token) throw new AppError('UNAUTHENTICATED', 'Missing bearer token.')
 
-    const payload = await this.verify(token)
+    const { payload, tokenSource } = await this.verify(token)
     const sub = payload.sub
     if (!sub) throw new AppError('UNAUTHENTICATED', 'Token has no subject.')
 
-    const principal = await this.resolvePrincipal(sub)
+    const principal = await this.resolvePrincipal(sub, tokenSource)
     this.cls.set('principal', principal)
     req.principal = principal
     return true
@@ -73,27 +76,60 @@ export class AuthGuard implements CanActivate {
     return scheme?.toLowerCase() === 'bearer' && value ? value.trim() : null
   }
 
-  private async verify(token: string): Promise<JWTPayload> {
+  private async verify(
+    token: string,
+  ): Promise<{ payload: JWTPayload; tokenSource: 'own' | 'supabase' }> {
+    // 1) Peek the header — UNTRUSTED, used only to route to the right verifier.
+    let kid: string | undefined
+    try {
+      kid = decodeProtectedHeader(token).kid
+    } catch {
+      throw new AppError('UNAUTHENTICATED', 'Malformed token.')
+    }
+    const looksOwn = kid !== undefined && OWN_KIDS.has(kid)
+
+    // 2) Own EdDSA path. Try first when the kid is ours; also try when there is
+    //    no kid at all (own tokens always carry one, so this is cheap + safe).
+    if (this.tokens.enabled && (looksOwn || kid === undefined)) {
+      try {
+        const payload = await this.tokens.verifyAccess(token) // pinned alg:EdDSA, iss, aud
+        return { payload, tokenSource: 'own' }
+      } catch (err) {
+        if (err instanceof AppError) throw err
+        // If the kid was explicitly OURS, a failure here is FATAL — never fall
+        // back to the Supabase verifier for a token that claims to be ours.
+        if (looksOwn) throw new AppError('UNAUTHENTICATED', 'Invalid or expired token.')
+        // else: not ours → fall through to the legacy verifier.
+      }
+    }
+
+    // 3) Legacy Supabase path (JWKS RS/ES, or HS256 secret). Each verifier pins
+    //    its own algorithm so an HS-signed token can never reach an asymmetric
+    //    key and vice-versa (alg-confusion mitigation).
     try {
       if (this.jwks) {
-        const { payload } = await jwtVerify(token, this.jwks)
-        return payload
+        const { payload } = await jwtVerify(token, this.jwks, {
+          algorithms: ['RS256', 'ES256'],
+        })
+        return { payload, tokenSource: 'supabase' }
       }
       if (this.hsSecret) {
-        const { payload } = await jwtVerify(token, this.hsSecret)
-        return payload
+        const { payload } = await jwtVerify(token, this.hsSecret, {
+          algorithms: ['HS256'],
+        })
+        return { payload, tokenSource: 'supabase' }
       }
-      throw new AppError(
-        'INTERNAL',
-        'Auth not configured: set SUPABASE_JWKS_URL or SUPABASE_JWT_SECRET.',
-      )
-    } catch (err) {
-      if (err instanceof AppError) throw err
+    } catch {
       throw new AppError('UNAUTHENTICATED', 'Invalid or expired token.')
     }
+
+    throw new AppError('UNAUTHENTICATED', 'Invalid or expired token.')
   }
 
-  private async resolvePrincipal(sub: string): Promise<AuthPrincipal> {
+  private async resolvePrincipal(
+    sub: string,
+    tokenSource: 'own' | 'supabase',
+  ): Promise<AuthPrincipal> {
     // Canonical domain comes from profiles, not the token. A verified token with
     // no profile yet (mid-onboarding) is valid but unscoped.
     const result = (await this.db.execute(sql`
@@ -112,7 +148,7 @@ export class AuthGuard implements CanActivate {
       isBanned: Boolean(row?.is_banned),
       isRestricted: false, // BanGuard resolves the self-healing truth on write routes
       restrictionEndsAt: null,
-      tokenSource: 'supabase',
+      tokenSource,
     }
   }
 }

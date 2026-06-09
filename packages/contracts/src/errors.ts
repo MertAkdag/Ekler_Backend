@@ -18,6 +18,10 @@ export const ERROR_CODES = [
   'CONFLICT', // 409 (PG 23505 unique violation)
   'UNIVERSITY_SCOPE_MISSING', // 500 — fail-closed guardrail, should never reach a client
   'INTERNAL', // 500
+  'OTP_INVALID', // 422 — wrong/expired/missing/locked OTP (generic, anti-enumeration)
+  'OTP_EXPIRED', // 410 — reserved; service currently folds expiry into OTP_INVALID
+  'OTP_LOCKED', // 429 — too many failed attempts on a code
+  'INVALID_REFRESH', // 401 — refresh token invalid/rotated/reused/expired
 ] as const
 
 export type ErrorCode = (typeof ERROR_CODES)[number]

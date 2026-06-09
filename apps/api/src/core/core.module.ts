@@ -6,6 +6,7 @@ import { ENV, loadEnv } from '../config/env'
 import { DrizzleModule } from '../db/drizzle.module'
 import { ScopedRepository } from '../db/scoped/scoped-repository'
 import { AuthGuard } from './auth/auth.guard'
+import { TokenService } from '../modules/auth/token.service'
 import { BanGuard } from './ban/ban.guard'
 import { ClsThrottlerGuard } from './throttler/cls-throttler.guard'
 import { RATE_LIMITS } from './throttler/rate-limits'
@@ -49,6 +50,9 @@ import { AllExceptionFilter } from './filters/all-exception.filter'
   providers: [
     { provide: ENV, useFactory: () => loadEnv() },
     ScopedRepository,
+    // Own-token signer/verifier — provided here (global) so AuthGuard and
+    // AuthService share ONE singleton (keys imported once at boot).
+    TokenService,
 
     { provide: APP_GUARD, useClass: ClsGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
@@ -62,6 +66,6 @@ import { AllExceptionFilter } from './filters/all-exception.filter'
 
     { provide: APP_FILTER, useClass: AllExceptionFilter },
   ],
-  exports: [ENV, ScopedRepository, DrizzleModule],
+  exports: [ENV, ScopedRepository, DrizzleModule, TokenService],
 })
 export class CoreModule {}

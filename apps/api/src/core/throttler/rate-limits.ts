@@ -18,6 +18,9 @@ export const RATE_LIMITS = {
   note: { name: 'note', ttl: 300_000, limit: 5 },
   report: { name: 'report', ttl: 3_600_000, limit: 5 },
   courseSuggest: { name: 'course-suggest', ttl: 3_600_000, limit: 10 },
+  otpRequest: { name: 'otp-request', ttl: 3_600_000, limit: 5 }, // 5/hour per IP
+  otpVerify: { name: 'otp-verify', ttl: 60_000, limit: 10 }, // 10/min per IP
+  refresh: { name: 'refresh', ttl: 60_000, limit: 20 }, // 20/min per IP — own bucket, not shared with verify
 } as const satisfies Record<string, ThrottlerOptions & { name: string }>
 
 /**

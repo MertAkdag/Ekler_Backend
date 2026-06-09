@@ -31,6 +31,8 @@ export const envSchema = z.object({
   // Infra (phase-gated)
   REDIS_URL: z.string().optional(),
   SENTRY_DSN: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  OTP_EMAIL_FROM: z.string().optional(),
 })
 
 export type Env = z.infer<typeof envSchema>
