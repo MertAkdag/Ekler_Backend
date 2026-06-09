@@ -6,6 +6,7 @@ import { CatalogModule } from './modules/catalog/catalog.module'
 import { ConfessionsModule } from './modules/confessions/confessions.module'
 import { NotesModule } from './modules/notes/notes.module'
 import { SessionsModule } from './modules/sessions/sessions.module'
+import { EventsModule } from './modules/events/events.module'
 
 /**
  * Root module. CoreModule is the cross-cutting backbone (guards, pipe,
@@ -23,6 +24,7 @@ import { SessionsModule } from './modules/sessions/sessions.module'
     ConfessionsModule,
     NotesModule,
     SessionsModule,
+    EventsModule,
   ],
 })
 export class AppModule {}
