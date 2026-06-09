@@ -282,7 +282,11 @@ const ACTIONS_BY_TABLE: Record<string, ResourceOptions['actions']> = {
 }
 
 /** Tables whose SHOW body is replaced by the sectioned RecordShow component. */
-const SHOW_COMPONENT_TABLES = new Set(['city_events', 'event_submissions'])
+const SHOW_COMPONENT_TABLES = new Set([
+  'city_events', 'event_submissions',
+  'confessions', 'confession_comments', 'notes',
+  'communities', 'community_posts', 'profiles',
+])
 
 /**
  * Apply HIDE / READONLY policy to a resource's real columns, then MERGE in the
