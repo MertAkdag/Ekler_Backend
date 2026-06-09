@@ -1,15 +1,19 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm'
 import type {
+  ConfessionCommentRow,
+  ConfessionCommentsQuery,
   ConfessionFeedQuery,
   ConfessionFeedRow,
+  CreateCommentBody,
+  CreateCommentResult,
   CreateConfessionBody,
   CreateConfessionResult,
   ListEnvelope,
 } from '@ekler/contracts'
 import { DRIZZLE, type Db } from '../../db/drizzle.module'
 import { ScopedRepository } from '../../db/scoped/scoped-repository'
-import { confessions, profiles, userSettings } from '../../db/schema'
+import { confessionComments, confessions, profiles, userSettings } from '../../db/schema'
 import { encodeCursor } from '../../core/pagination/cursor'
 import { AppError } from '../../core/errors/app-error'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
@@ -178,26 +182,139 @@ export class ConfessionsService {
     }
   }
 
-  /** Map create_confession_v2's P0001 exceptions to canonical error codes. */
+  /**
+   * Comment list for a confession — Drizzle port of get_confession_comments_v2.
+   * Scoped via the PARENT confession (confession_comments has no university_domain):
+   * the inner join + scopeFilter(confessions.universityDomain) makes a cross-uni or
+   * non-existent confession id return an empty page (anti-K-1). Keyset ASC by (created_at, id).
+   */
+  async comments(
+    confessionId: string,
+    q: ConfessionCommentsQuery,
+    user: AuthPrincipal,
+  ): Promise<ListEnvelope<ConfessionCommentRow>> {
+    const domain = this.scope.domain()
+    const uid = user.userId
+    const empty: ListEnvelope<ConfessionCommentRow> = {
+      data: [],
+      meta: { cursor: null, has_more: false },
+    }
+
+    const restricted = await this.db.execute(
+      sql`select public.is_user_restricted(${uid}::uuid) as restricted`,
+    )
+    if ((restricted as unknown as { rows: Array<{ restricted: boolean }> }).rows[0]?.restricted) {
+      return empty
+    }
+
+    const authorName = sql<string>`case
+      when ${confessionComments.isAnonymous} then 'Anonim Öğrenci'
+      when ${confessionComments.authorId} = ${uid}::uuid then coalesce(${profiles.fullName}, ${profiles.username}, 'Öğrenci')
+      when coalesce(${userSettings.profileVisibilityEnabled}, true) then coalesce(${profiles.fullName}, ${profiles.username}, 'Öğrenci')
+      else 'Anonim Öğrenci'
+    end`
+    const authorUsername = sql<string | null>`case
+      when ${confessionComments.isAnonymous} then null
+      when ${confessionComments.authorId} = ${uid}::uuid then ${profiles.username}
+      when coalesce(${userSettings.profileVisibilityEnabled}, true) then ${profiles.username}
+      else null
+    end`
+    const authorAvatar = sql<string | null>`case
+      when ${confessionComments.isAnonymous} then null
+      when ${confessionComments.authorId} = ${uid}::uuid then ${profiles.avatarUrl}
+      when coalesce(${userSettings.profileVisibilityEnabled}, true) then ${profiles.avatarUrl}
+      else null
+    end`
+
+    const where = [
+      sql`${confessionComments.confessionId} = ${confessionId}::uuid`,
+      this.scope.scopeFilter(confessions.universityDomain),
+      isNull(confessions.hiddenAt),
+      eq(confessions.moderationStatus, 'published'),
+      isNull(confessionComments.hiddenAt),
+      eq(confessionComments.moderationStatus, 'published'),
+      eq(confessionComments.isFlagged, false),
+      q.cursor_created_at && q.cursor_id
+        ? sql`(${confessionComments.createdAt}, ${confessionComments.id}) > (${q.cursor_created_at}::timestamptz, ${q.cursor_id}::uuid)`
+        : undefined,
+    ]
+
+    const rows = await this.db
+      .select({
+        id: confessionComments.id,
+        body: confessionComments.body,
+        is_anonymous: confessionComments.isAnonymous,
+        created_at: confessionComments.createdAt,
+        is_mine: sql<boolean>`${confessionComments.authorId} = ${uid}::uuid`,
+        reply_to: confessionComments.replyTo,
+        author_name: authorName,
+        author_username: authorUsername,
+        author_avatar: authorAvatar,
+      })
+      .from(confessionComments)
+      .innerJoin(confessions, eq(confessions.id, confessionComments.confessionId))
+      .leftJoin(profiles, eq(profiles.id, confessionComments.authorId))
+      .leftJoin(userSettings, eq(userSettings.userId, confessionComments.authorId))
+      .where(and(...where))
+      .orderBy(asc(confessionComments.createdAt), asc(confessionComments.id))
+      .limit(q.limit)
+
+    const hasMore = rows.length === q.limit
+    const last = rows[rows.length - 1]
+    const cursor =
+      hasMore && last ? encodeCursor({ created_at: last.created_at, id: last.id }) : null
+
+    return { data: rows as ConfessionCommentRow[], meta: { cursor, has_more: hasMore } }
+  }
+
+  /**
+   * Create a comment — same wrap-the-RPC strategy as create() (moderation stays in DB).
+   * create_confession_comment_v2 also scopes the parent confession to the caller's
+   * university_domain, so cross-uni comment attempts raise "Gönderi bulunamadı".
+   */
+  async createComment(
+    confessionId: string,
+    input: CreateCommentBody,
+    user: AuthPrincipal,
+  ): Promise<CreateCommentResult> {
+    const claims = JSON.stringify({ sub: user.userId, role: 'authenticated' })
+    try {
+      return await this.db.transaction(async (tx) => {
+        await tx.execute(sql`select set_config('request.jwt.claims', ${claims}, true)`)
+        const res = (await tx.execute(
+          sql`select public.create_confession_comment_v2(${confessionId}::uuid, ${input.body}, ${input.isAnonymous}, ${input.replyTo}) as result`,
+        )) as unknown as { rows: Array<{ result: CreateCommentResult }> }
+        const row = res.rows[0]
+        if (!row) throw new AppError('INTERNAL', 'Yorum oluşturulamadı.')
+        return row.result
+      })
+    } catch (err) {
+      throw this.mapWriteError(err)
+    }
+  }
+
+  /** Map create_confession_v2 / _comment_v2 P0001 exceptions to canonical error codes. */
   private mapWriteError(err: unknown): AppError {
     if (err instanceof AppError) return err
     const message = (err as { message?: string })?.message ?? ''
     if (message.includes('Çok hızlı')) {
       return new AppError('RATE_LIMIT_EXCEEDED', 'Çok hızlı gönderim — lütfen biraz bekleyin.')
     }
-    if (message.includes('paylaşımı yapamıyor')) {
-      return new AppError('USER_BANNED', 'Hesabın şu an Kürsü paylaşımı yapamıyor.')
+    if (message.includes('yapamıyor')) {
+      return new AppError('USER_BANNED', message)
     }
-    if (message.includes('Profil bulunamadı')) {
-      return new AppError('NOT_FOUND', 'Profil bulunamadı.')
+    if (message.includes('bulunamadı')) {
+      return new AppError('NOT_FOUND', message)
     }
     if (
       message.includes('500 karakter') ||
+      message.includes('300 karakter') ||
       message.includes('Geçersiz kategori') ||
-      message.includes('Bir şeyler yaz')
+      message.includes('Bir şeyler yaz') ||
+      message.includes('boş olamaz')
     ) {
       return new AppError('VALIDATION_FAILED', message)
     }
-    return new AppError('INTERNAL', 'Gönderi oluşturulamadı.')
+    return new AppError('INTERNAL', 'İşlem tamamlanamadı.')
   }
 }

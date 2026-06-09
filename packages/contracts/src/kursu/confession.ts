@@ -86,3 +86,45 @@ export const createConfessionResultSchema = z.object({
   message: z.string(),
 })
 export type CreateConfessionResult = z.infer<typeof createConfessionResultSchema>
+
+// ─── Comments ────────────────────────────────────────────────────────────────
+
+/** One comment row — the 9 columns get_confession_comments_v2 returns, snake_case. */
+export const confessionCommentRowSchema = z.object({
+  id: z.string(),
+  body: z.string(),
+  is_anonymous: z.boolean(),
+  created_at: z.string(),
+  is_mine: z.boolean(),
+  reply_to: z.string().nullable(),
+  author_name: z.string().nullable(),
+  author_username: z.string().nullable(),
+  author_avatar: z.string().nullable(),
+})
+export type ConfessionCommentRow = z.infer<typeof confessionCommentRowSchema>
+
+/** Comments are keyset-paginated ASC by (created_at, id) — the RPC's raw cursor. */
+export const confessionCommentsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(20),
+  cursor_created_at: z.string().optional(),
+  cursor_id: z.string().uuid().optional(),
+})
+export type ConfessionCommentsQuery = z.infer<typeof confessionCommentsQuerySchema>
+
+export const createCommentBodySchema = z.object({
+  body: z.string().trim().min(1).max(300),
+  isAnonymous: z.boolean().default(true),
+  replyTo: z.string().uuid().nullable().default(null),
+})
+export type CreateCommentBody = z.infer<typeof createCommentBodySchema>
+
+/** Mirrors create_confession_comment_v2's jsonb (snake_case); published carries `comment`. */
+export const createCommentResultSchema = z.object({
+  status: z.enum(['published', 'needs_review', 'blocked']),
+  moderation_status: z.string(),
+  moderation_label: z.string().nullable(),
+  comment_id: z.string().nullable().optional(),
+  message: z.string(),
+  comment: confessionCommentRowSchema.nullable().optional(),
+})
+export type CreateCommentResult = z.infer<typeof createCommentResultSchema>
