@@ -11,6 +11,7 @@
     "test": "echo \"(admin) test: skip\""
   },
   "dependencies": {
+    "@adminjs/design-system": "4.1.1",
     "@adminjs/express": "^6.1.0",
     "@adminjs/sql": "^2.1.1",
     "adminjs": "^7.8.13",
@@ -18,13 +19,18 @@
     "express": "^4.21.2",
     "express-formidable": "^1.2.0",
     "express-session": "^1.18.1",
-    "pg": "^8.13.1"
+    "pg": "^8.13.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "styled-components": "5.3.9"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/express-session": "^1.18.1",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.11.10",
+    "@types/react": "^18.3",
+    "@types/react-dom": "^18.3",
     "tsx": "^4.19.2",
     "typescript": "~5.9.2"
   }

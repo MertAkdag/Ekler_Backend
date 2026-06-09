@@ -5,6 +5,8 @@ import { Adapter, Database, Resource } from '@adminjs/sql'
 import express from 'express'
 import { TR_TRANSLATIONS } from './translations.js'
 import { buildResources } from './resources.js'
+import { Components, componentLoader } from './components.js'
+import { dashboardHandler } from './stats.js'
 
 /**
  * Ekler Admin — v2.
@@ -47,6 +49,8 @@ const start = async (): Promise<void> => {
   const admin = new AdminJS({
     rootPath: '/admin',
     branding: { companyName: 'Ekler Yönetim' },
+    componentLoader,
+    dashboard: { component: Components.Dashboard, handler: dashboardHandler },
     locale: {
       language: 'tr',
       availableLanguages: ['tr'],

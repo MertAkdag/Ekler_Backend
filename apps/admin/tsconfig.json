@@ -5,11 +5,12 @@
     "moduleResolution": "NodeNext",
     "experimentalDecorators": false,
     "emitDecoratorMetadata": false,
+    "jsx": "react-jsx",
     "rootDir": "./src",
     "outDir": "./dist",
     "types": ["node"],
     "noUnusedLocals": false,
     "noUnusedParameters": false
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }
