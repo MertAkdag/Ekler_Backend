@@ -8,7 +8,7 @@ import { ScopedRepository } from '../db/scoped/scoped-repository'
 import { AuthGuard } from './auth/auth.guard'
 import { BanGuard } from './ban/ban.guard'
 import { ClsThrottlerGuard } from './throttler/cls-throttler.guard'
-import { THROTTLER_DEFINITIONS } from './throttler/rate-limits'
+import { RATE_LIMITS } from './throttler/rate-limits'
 import { ZodValidationPipe } from './validation/zod-validation.pipe'
 import { TelemetryInterceptor } from './interceptors/telemetry.interceptor'
 import { EnvelopeInterceptor } from './interceptors/envelope.interceptor'
@@ -38,7 +38,12 @@ import { AllExceptionFilter } from './filters/all-exception.filter'
         setup: (cls) => cls.set('requestId', cls.getId()),
       },
     }),
-    ThrottlerModule.forRoot({ throttlers: THROTTLER_DEFINITIONS }),
+    // Only the lax `default` limiter (120/60s) applies globally. The strict named
+    // limiters (confession 3/60s, etc.) are NOT registered globally — @nestjs/throttler
+    // applies EVERY registered throttler to EVERY route, so registering them all here
+    // capped the whole API at the strictest (3/60s). They are applied per-route via
+    // @Throttle in Phase 3 instead.
+    ThrottlerModule.forRoot({ throttlers: [RATE_LIMITS.default] }),
     DrizzleModule,
   ],
   providers: [
