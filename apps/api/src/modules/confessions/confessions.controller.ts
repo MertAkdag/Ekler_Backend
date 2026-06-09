@@ -1,9 +1,13 @@
-import { Controller, Get, Query } from '@nestjs/common'
-import type { ConfessionFeedRow, ListEnvelope } from '@ekler/contracts'
+import { Body, Controller, Get, Post, Query } from '@nestjs/common'
+import type {
+  ConfessionFeedRow,
+  CreateConfessionResult,
+  ListEnvelope,
+} from '@ekler/contracts'
 import { CurrentUser } from '../../core/auth/public.decorator'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 import { ConfessionsService } from './confessions.service'
-import { ConfessionFeedQueryDto } from './confessions.dto'
+import { ConfessionFeedQueryDto, CreateConfessionBodyDto } from './confessions.dto'
 
 @Controller('confessions')
 export class ConfessionsController {
@@ -16,5 +20,14 @@ export class ConfessionsController {
     @Query() q: ConfessionFeedQueryDto,
   ): Promise<ListEnvelope<ConfessionFeedRow>> {
     return this.confessions.feed(q, user)
+  }
+
+  /** Create a confession — moderation runs server-side (create_confession_v2). */
+  @Post()
+  create(
+    @CurrentUser() user: AuthPrincipal,
+    @Body() body: CreateConfessionBodyDto,
+  ): Promise<CreateConfessionResult> {
+    return this.confessions.create(body, user)
   }
 }

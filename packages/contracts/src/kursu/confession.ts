@@ -65,17 +65,24 @@ export const confessionFeedRowSchema = z.object({
 export type ConfessionFeedRow = z.infer<typeof confessionFeedRowSchema>
 
 export const createConfessionBodySchema = z.object({
-  body: z.string().trim().min(1).max(500),
+  // empty body is allowed when an image is attached — the server (create_confession_v2)
+  // enforces the "body OR image" rule, so we only cap the length here.
+  body: z.string().trim().max(500).default(''),
   category: confessionCategorySchema,
   imagePath: z.string().nullable().default(null),
   isAnonymous: z.boolean().default(true),
 })
 export type CreateConfessionBody = z.infer<typeof createConfessionBodySchema>
 
+/**
+ * Mirrors the jsonb create_confession_v2 returns (snake_case), so the RN create path
+ * maps the Node and Supabase responses identically. `blocked` results omit confession_id.
+ */
 export const createConfessionResultSchema = z.object({
   status: z.enum(['published', 'needs_review', 'blocked']),
-  confessionId: z.string().nullable(),
-  moderationLabel: z.string().nullable(),
-  message: z.string().nullable(),
+  moderation_status: z.string(),
+  moderation_label: z.string().nullable(),
+  confession_id: z.string().nullable().optional(),
+  message: z.string(),
 })
 export type CreateConfessionResult = z.infer<typeof createConfessionResultSchema>

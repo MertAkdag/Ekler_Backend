@@ -3,12 +3,15 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import type {
   ConfessionFeedQuery,
   ConfessionFeedRow,
+  CreateConfessionBody,
+  CreateConfessionResult,
   ListEnvelope,
 } from '@ekler/contracts'
 import { DRIZZLE, type Db } from '../../db/drizzle.module'
 import { ScopedRepository } from '../../db/scoped/scoped-repository'
 import { confessions, profiles, userSettings } from '../../db/schema'
 import { encodeCursor } from '../../core/pagination/cursor'
+import { AppError } from '../../core/errors/app-error'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 
 /**
@@ -140,5 +143,61 @@ export class ConfessionsService {
       hasMore && last ? encodeCursor({ created_at: last.created_at, id: last.id }) : null
 
     return { data: rows, meta: { cursor, has_more: hasMore } }
+  }
+
+  /**
+   * Create a confession.
+   *
+   * The moderation engine (evaluate_moderation_rules + normalize/scan-log/enqueue) is
+   * correctness- and Apple-review-critical and stays in the DB. Until the 1000-row
+   * moderation snapshot gate exists to safely re-implement the orchestration, we call
+   * the proven create_confession_v2 RPC inside a Node transaction — zero moderation
+   * drift, atomic, and the API surface still moves to Node. auth.uid() is supplied via
+   * a TRANSACTION-LOCAL jwt-claims setting (reset at commit, never leaks across the pool).
+   *
+   * `blocked`/`needs_review`/`published` come back as the RPC's jsonb. Only the
+   * validation / ban / rate-limit paths raise (P0001); those map to canonical codes.
+   */
+  async create(
+    input: CreateConfessionBody,
+    user: AuthPrincipal,
+  ): Promise<CreateConfessionResult> {
+    const claims = JSON.stringify({ sub: user.userId, role: 'authenticated' })
+    try {
+      return await this.db.transaction(async (tx) => {
+        await tx.execute(sql`select set_config('request.jwt.claims', ${claims}, true)`)
+        const res = (await tx.execute(
+          sql`select public.create_confession_v2(${input.body}, ${input.category}, ${input.isAnonymous}, ${input.imagePath}) as result`,
+        )) as unknown as { rows: Array<{ result: CreateConfessionResult }> }
+        const row = res.rows[0]
+        if (!row) throw new AppError('INTERNAL', 'Gönderi oluşturulamadı.')
+        return row.result
+      })
+    } catch (err) {
+      throw this.mapWriteError(err)
+    }
+  }
+
+  /** Map create_confession_v2's P0001 exceptions to canonical error codes. */
+  private mapWriteError(err: unknown): AppError {
+    if (err instanceof AppError) return err
+    const message = (err as { message?: string })?.message ?? ''
+    if (message.includes('Çok hızlı')) {
+      return new AppError('RATE_LIMIT_EXCEEDED', 'Çok hızlı gönderim — lütfen biraz bekleyin.')
+    }
+    if (message.includes('paylaşımı yapamıyor')) {
+      return new AppError('USER_BANNED', 'Hesabın şu an Kürsü paylaşımı yapamıyor.')
+    }
+    if (message.includes('Profil bulunamadı')) {
+      return new AppError('NOT_FOUND', 'Profil bulunamadı.')
+    }
+    if (
+      message.includes('500 karakter') ||
+      message.includes('Geçersiz kategori') ||
+      message.includes('Bir şeyler yaz')
+    ) {
+      return new AppError('VALIDATION_FAILED', message)
+    }
+    return new AppError('INTERNAL', 'Gönderi oluşturulamadı.')
   }
 }
