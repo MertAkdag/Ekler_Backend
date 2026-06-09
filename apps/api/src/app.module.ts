@@ -8,6 +8,7 @@ import { NotesModule } from './modules/notes/notes.module'
 import { SessionsModule } from './modules/sessions/sessions.module'
 import { EventsModule } from './modules/events/events.module'
 import { CommunitiesModule } from './modules/communities/communities.module'
+import { ReportsModule } from './modules/reports/reports.module'
 
 /**
  * Root module. CoreModule is the cross-cutting backbone (guards, pipe,
@@ -27,6 +28,7 @@ import { CommunitiesModule } from './modules/communities/communities.module'
     SessionsModule,
     EventsModule,
     CommunitiesModule,
+    ReportsModule,
   ],
 })
 export class AppModule {}
