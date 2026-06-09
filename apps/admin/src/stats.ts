@@ -24,7 +24,7 @@ export async function dashboardHandler(): Promise<{ stats: DashboardStats }> {
       (select count(*) from public.notes where is_flagged)                                as flagged_notes,
       (select count(*) from public.profiles where created_at >= date_trunc('day', now())) as signups_today,
       (select count(*) from public.profiles)                                              as total_users,
-      (select count(*) from public.study_sessions where status in ('active', 'planned'))  as active_sessions,
+      (select count(*) from public.study_sessions where status in ('active', 'full'))     as active_sessions,
       (select count(*) from public.event_submissions where status = 'pending')            as pending_events
   `)
 

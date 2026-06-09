@@ -8,6 +8,7 @@ import {
   reportActions,
   userActions,
 } from './actions.js'
+import { Components } from './components.js'
 
 /**
  * Per-resource AdminJS options (the v1 panel registered raw tables with every
@@ -26,6 +27,10 @@ interface Cfg {
   list: string[]
   sort?: { sortBy: string; direction: Dir }
   schema?: 'auth'
+  /** column → badgeMap key (a key of MAPS in status-badge.tsx) → colored badge on list + show. */
+  badges?: Record<string, string>
+  /** image/URL column → thumbnail on list + show; 'circle' for round avatars. */
+  thumbs?: Record<string, 'rect' | 'circle'>
 }
 
 /**
@@ -76,62 +81,76 @@ const RESOURCES: Cfg[] = [
     nav: 'Moderasyon',
     sort: { sortBy: 'created_at', direction: 'desc' },
     list: ['target_type', 'reason', 'status', 'reporter_id', 'created_at'],
+    badges: { status: 'report_status', target_type: 'report_target' },
   },
   {
     table: 'user_sanctions',
     nav: 'Moderasyon',
     sort: { sortBy: 'created_at', direction: 'desc' },
     list: ['user_id', 'sanction_type', 'is_active', 'expires_at', 'created_at'],
+    badges: { sanction_type: 'sanction_type', is_active: 'bool_active' },
   },
   // ── İçerik ──
   {
     table: 'confessions',
     nav: 'İçerik',
     sort: { sortBy: 'created_at', direction: 'desc' },
-    list: ['body', 'category', 'author_id', 'moderation_status', 'is_flagged', 'report_count', 'created_at'],
+    list: ['image_url', 'body', 'category', 'author_id', 'moderation_status', 'is_flagged', 'report_count', 'created_at'],
+    badges: { moderation_status: 'moderation_status', category: 'confession_category', is_flagged: 'bool_flagged' },
+    thumbs: { image_url: 'rect' },
   },
   {
     table: 'confession_comments',
     nav: 'İçerik',
     sort: { sortBy: 'created_at', direction: 'desc' },
     list: ['body', 'author_id', 'confession_id', 'moderation_status', 'is_flagged', 'created_at'],
+    badges: { moderation_status: 'moderation_status', is_flagged: 'bool_flagged' },
   },
   {
     table: 'notes',
     nav: 'İçerik',
     sort: { sortBy: 'created_at', direction: 'desc' },
     list: ['title', 'course_id', 'author_id', 'vote_score', 'is_hidden', 'is_flagged', 'created_at'],
+    badges: { is_hidden: 'bool_hidden', is_flagged: 'bool_flagged' },
   },
   {
     table: 'communities',
     nav: 'İçerik',
     sort: { sortBy: 'created_at', direction: 'desc' },
-    list: ['name', 'category', 'member_count', 'is_active', 'is_verified', 'created_at'],
+    list: ['avatar_url', 'name', 'category', 'member_count', 'is_active', 'is_verified', 'created_at'],
+    badges: { is_active: 'bool_active', is_verified: 'bool_verified' },
+    thumbs: { avatar_url: 'circle', cover_url: 'rect' },
   },
   {
     table: 'community_posts',
     nav: 'İçerik',
     sort: { sortBy: 'created_at', direction: 'desc' },
-    list: ['body', 'community_id', 'author_id', 'is_pinned', 'created_at'],
+    list: ['image_url', 'body', 'community_id', 'author_id', 'is_pinned', 'created_at'],
+    thumbs: { image_url: 'rect' },
   },
   {
     table: 'study_sessions',
     nav: 'İçerik',
     sort: { sortBy: 'starts_at', direction: 'desc' },
     list: ['title', 'course_id', 'creator_id', 'status', 'starts_at', 'participant_count'],
+    badges: { status: 'session_status' },
   },
   // ── Etkinlikler ──
   {
     table: 'city_events',
     nav: 'Etkinlikler',
     sort: { sortBy: 'starts_at', direction: 'desc' },
-    list: ['title', 'city_id', 'category', 'starts_at', 'status', 'is_sponsored'],
+    // status badge intentionally omitted — city_events.status enum is unverified.
+    list: ['cover_url', 'title', 'city_id', 'category', 'starts_at', 'status', 'is_sponsored'],
+    thumbs: { cover_url: 'rect' },
   },
   {
     table: 'event_submissions',
     nav: 'Etkinlikler',
     sort: { sortBy: 'created_at', direction: 'desc' },
-    list: ['title', 'partner_name', 'contact_email', 'status', 'created_at'],
+    list: ['cover_url', 'title', 'partner_name', 'contact_email', 'status', 'created_at'],
+    badges: { status: 'submission_status' },
+    thumbs: { cover_url: 'rect' },
   },
   {
     table: 'event_partners',
@@ -144,7 +163,9 @@ const RESOURCES: Cfg[] = [
     table: 'profiles',
     nav: 'Kullanıcılar',
     sort: { sortBy: 'created_at', direction: 'desc' },
-    list: ['username', 'full_name', 'university_name', 'is_admin', 'is_banned', 'is_restricted', 'created_at'],
+    list: ['avatar_url', 'username', 'full_name', 'university_name', 'is_admin', 'is_banned', 'is_restricted', 'created_at'],
+    badges: { is_admin: 'bool_admin', is_banned: 'bool_banned', is_restricted: 'bool_restricted' },
+    thumbs: { avatar_url: 'circle' },
   },
   {
     table: 'notifications',
@@ -210,8 +231,11 @@ const ACTIONS_BY_TABLE: Record<string, ResourceOptions['actions']> = {
   profiles: userActions(),
 }
 
-/** Apply the HIDE / READONLY policy to whichever of a resource's real columns match. */
-function buildProperties(resource: ResourceMetadata): Record<string, PropertyOptions> {
+/**
+ * Apply HIDE / READONLY policy to a resource's real columns, then MERGE in the
+ * per-column badge/thumbnail component wiring (without clobbering the policy).
+ */
+function buildProperties(resource: ResourceMetadata, cfg: Cfg): Record<string, PropertyOptions> {
   const props: Record<string, PropertyOptions> = {}
   for (const path of resource.properties.map((p) => p.path())) {
     if (HIDE.has(path)) {
@@ -221,6 +245,20 @@ function buildProperties(resource: ResourceMetadata): Record<string, PropertyOpt
         isDisabled: true,
         isVisible: { list: true, show: true, edit: false, filter: true },
       }
+    }
+  }
+  for (const [col, mapName] of Object.entries(cfg.badges ?? {})) {
+    props[col] = {
+      ...props[col],
+      custom: { ...props[col]?.custom, badgeMap: mapName },
+      components: { ...props[col]?.components, list: Components.StatusBadge, show: Components.StatusBadge },
+    }
+  }
+  for (const [col, shape] of Object.entries(cfg.thumbs ?? {})) {
+    props[col] = {
+      ...props[col],
+      custom: { ...props[col]?.custom, shape },
+      components: { ...props[col]?.components, list: Components.Thumbnail, show: Components.Thumbnail },
     }
   }
   return props
@@ -236,7 +274,7 @@ export function buildResources(publicDb: SqlDatabase, authDb: SqlDatabase): Reso
         navigation: { name: cfg.nav },
         sort: cfg.sort,
         listProperties: cfg.list,
-        properties: buildProperties(resource),
+        properties: buildProperties(resource, cfg),
         actions: ACTIONS_BY_TABLE[cfg.table],
       },
     }
