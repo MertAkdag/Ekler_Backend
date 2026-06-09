@@ -1,12 +1,13 @@
+import { Throttle } from '@nestjs/throttler'
 import type { ThrottlerOptions } from '@nestjs/throttler'
 
 /**
  * Named rate limiters — mirror the existing Supabase DB rate-limit triggers
  * (which stay as a backstop through Phase 3). ttl is in milliseconds (throttler v6).
  *
- * A lax `default` limiter applies to every route for baseline abuse protection.
- * Specific routes opt into a named limiter via `@Throttle({ confession: {} })`
- * (wired per-endpoint starting Phase 3).
+ * Only the lax `default` limiter is registered globally (see CoreModule) for
+ * baseline abuse protection. Stricter per-route limits are applied with the
+ * `RateLimit()` decorator below, which OVERRIDES `default` for that one route.
  */
 export const RATE_LIMITS = {
   default: { name: 'default', ttl: 60_000, limit: 120 },
@@ -19,4 +20,17 @@ export const RATE_LIMITS = {
   courseSuggest: { name: 'course-suggest', ttl: 3_600_000, limit: 10 },
 } as const satisfies Record<string, ThrottlerOptions & { name: string }>
 
-export const THROTTLER_DEFINITIONS: ThrottlerOptions[] = Object.values(RATE_LIMITS)
+/**
+ * Apply a stricter named limit to a single write route.
+ *
+ * throttler v6 applies EVERY registered named throttler to EVERY route, so we
+ * register only `default` globally and override it here per route. The limit/ttl
+ * come from RATE_LIMITS so the numbers live in one place; the limiter is still
+ * keyed by the authenticated user (ClsThrottlerGuard.getTracker).
+ *
+ * Note: throttler storage is in-memory today (per-replica). Sharing the counter
+ * across web replicas needs the Redis store (@nestjs/throttler-storage-redis) —
+ * still TODO, harmless while we run a single instance.
+ */
+export const RateLimit = (key: Exclude<keyof typeof RATE_LIMITS, 'default'>) =>
+  Throttle({ default: { limit: RATE_LIMITS[key].limit, ttl: RATE_LIMITS[key].ttl } })

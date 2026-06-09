@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/com
 import type { CreateSessionResult, SessionFeedRow } from '@ekler/contracts'
 import { CurrentUser } from '../../core/auth/public.decorator'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
+import { RateLimit } from '../../core/throttler/rate-limits'
 import { SessionsService } from './sessions.service'
 import { CreateSessionBodyDto, SessionFeedQueryDto } from './sessions.dto'
 
@@ -29,6 +30,7 @@ export class SessionsController {
 
   /** Join a session. */
   @Post(':id/join')
+  @RateLimit('sessionJoin')
   @HttpCode(204)
   join(@CurrentUser() user: AuthPrincipal, @Param('id') id: string): Promise<void> {
     return this.sessions.join(id, user)

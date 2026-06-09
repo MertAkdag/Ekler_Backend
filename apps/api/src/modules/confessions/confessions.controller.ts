@@ -8,6 +8,7 @@ import type {
 } from '@ekler/contracts'
 import { CurrentUser } from '../../core/auth/public.decorator'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
+import { RateLimit } from '../../core/throttler/rate-limits'
 import { ConfessionsService } from './confessions.service'
 import {
   ConfessionCommentsQueryDto,
@@ -31,6 +32,7 @@ export class ConfessionsController {
 
   /** Create a confession — moderation runs server-side (create_confession_v2). */
   @Post()
+  @RateLimit('confession')
   create(
     @CurrentUser() user: AuthPrincipal,
     @Body() body: CreateConfessionBodyDto,
@@ -50,6 +52,7 @@ export class ConfessionsController {
 
   /** Create a comment — moderation runs server-side (create_confession_comment_v2). */
   @Post(':id/comments')
+  @RateLimit('comment')
   createComment(
     @CurrentUser() user: AuthPrincipal,
     @Param('id') confessionId: string,
