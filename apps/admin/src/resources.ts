@@ -31,6 +31,10 @@ interface Cfg {
   badges?: Record<string, string>
   /** image/URL column → thumbnail on list + show; 'circle' for round avatars. */
   thumbs?: Record<string, 'rect' | 'circle'>
+  /** ordered, curated SHOW properties (also the fallback body if a custom show errors). */
+  show?: string[]
+  /** ordered, curated EDIT+NEW properties. MUST include every NOT-NULL-without-default column. */
+  edit?: string[]
 }
 
 /**
@@ -140,9 +144,26 @@ const RESOURCES: Cfg[] = [
     table: 'city_events',
     nav: 'Etkinlikler',
     sort: { sortBy: 'starts_at', direction: 'desc' },
-    // status badge intentionally omitted — city_events.status enum is unverified.
     list: ['cover_url', 'title', 'city_id', 'category', 'starts_at', 'status', 'is_sponsored'],
+    badges: { status: 'city_event_status', is_sponsored: 'bool_sponsored' },
     thumbs: { cover_url: 'rect' },
+    show: [
+      'title', 'category', 'cover_url', 'description',
+      'starts_at', 'ends_at', 'city_id', 'venue_name', 'venue_address',
+      'organizer_name', 'organizer_instagram', 'organizer_url',
+      'ticket_url', 'price_label',
+      'status', 'is_sponsored', 'sponsorship_tier',
+      'admin_notes',
+      'partner_id', 'source_submission_id', 'created_at', 'updated_at',
+    ],
+    edit: [
+      'title', 'category', 'cover_url', 'description',
+      'starts_at', 'ends_at', 'city_id', 'venue_name', 'venue_address',
+      'organizer_name', 'organizer_instagram', 'organizer_url',
+      'ticket_url', 'price_label',
+      'status', 'is_sponsored', 'sponsorship_tier',
+      'admin_notes', 'partner_id',
+    ],
   },
   {
     table: 'event_submissions',
@@ -151,12 +172,41 @@ const RESOURCES: Cfg[] = [
     list: ['cover_url', 'title', 'partner_name', 'contact_email', 'status', 'created_at'],
     badges: { status: 'submission_status' },
     thumbs: { cover_url: 'rect' },
+    show: [
+      'title', 'cover_url', 'description',
+      'starts_at', 'ends_at', 'city_id', 'venue_name', 'venue_address',
+      'partner_name', 'contact_name', 'contact_email', 'contact_phone',
+      'organizer_instagram', 'organizer_url',
+      'ticket_url', 'price_label', 'package_requested',
+      'status', 'submission_notes', 'review_notes',
+      'approved_event_id', 'created_at', 'updated_at',
+    ],
+    edit: [
+      'title', 'cover_url', 'description',
+      'starts_at', 'ends_at', 'city_id', 'venue_name', 'venue_address',
+      'partner_name', 'contact_name', 'contact_email', 'contact_phone',
+      'organizer_instagram', 'organizer_url',
+      'ticket_url', 'price_label', 'package_requested',
+      'status', 'submission_notes', 'review_notes',
+    ],
   },
   {
     table: 'event_partners',
     nav: 'Etkinlikler',
     sort: { sortBy: 'name', direction: 'asc' },
     list: ['name', 'partner_kind', 'contact_email', 'created_at'],
+    show: [
+      'name', 'partner_kind',
+      'contact_name', 'contact_email', 'contact_phone',
+      'website_url', 'instagram_url',
+      'notes', 'created_at', 'updated_at',
+    ],
+    edit: [
+      'name', 'partner_kind',
+      'contact_name', 'contact_email', 'contact_phone',
+      'website_url', 'instagram_url',
+      'notes',
+    ],
   },
   // ── Kullanıcılar ──
   {
@@ -231,6 +281,9 @@ const ACTIONS_BY_TABLE: Record<string, ResourceOptions['actions']> = {
   profiles: userActions(),
 }
 
+/** Tables whose SHOW body is replaced by the sectioned RecordShow component. */
+const SHOW_COMPONENT_TABLES = new Set(['city_events', 'event_submissions'])
+
 /**
  * Apply HIDE / READONLY policy to a resource's real columns, then MERGE in the
  * per-column badge/thumbnail component wiring (without clobbering the policy).
@@ -268,14 +321,23 @@ export function buildResources(publicDb: SqlDatabase, authDb: SqlDatabase): Reso
   return [...RESOURCES, AUTH_USERS].map((cfg) => {
     const db = cfg.schema === 'auth' ? authDb : publicDb
     const resource = db.table(cfg.table)
+    // Replace the show BODY (not the action header → Onayla/Reddet/Edit/Delete survive).
+    // event tables define no `show` action, so a clean override suffices; cast resolves
+    // the RecordActionResponse↔ActionResponse variance from spreading typed actions.
+    const baseActions = ACTIONS_BY_TABLE[cfg.table]
+    const actions = (SHOW_COMPONENT_TABLES.has(cfg.table)
+      ? { ...baseActions, show: { component: Components.RecordShow } }
+      : baseActions) as ResourceOptions['actions']
     return {
       resource,
       options: {
         navigation: { name: cfg.nav },
         sort: cfg.sort,
         listProperties: cfg.list,
+        showProperties: cfg.show,
+        editProperties: cfg.edit,
         properties: buildProperties(resource, cfg),
-        actions: ACTIONS_BY_TABLE[cfg.table],
+        actions,
       },
     }
   })

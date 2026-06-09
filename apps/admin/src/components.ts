@@ -8,4 +8,5 @@ export const Components = {
   StatusBadge: componentLoader.add('StatusBadge', './components/status-badge'),
   Thumbnail: componentLoader.add('Thumbnail', './components/thumbnail'),
   Hub: componentLoader.add('Hub', './components/hub'),
+  RecordShow: componentLoader.add('RecordShow', './components/record-show'),
 }

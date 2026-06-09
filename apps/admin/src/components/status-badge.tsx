@@ -35,6 +35,16 @@ const MAPS: Record<string, BadgeMap> = {
     approved: { variant: 'success', label: 'Onaylandı' },
     rejected: { variant: 'danger', label: 'Reddedildi' },
   },
+  city_event_status: {
+    draft: { variant: 'default', label: 'Taslak' },
+    pending: { variant: 'info', label: 'Bekliyor' },
+    approved: { variant: 'success', label: 'Onaylandı' },
+    scheduled: { variant: 'info', label: 'Planlandı' },
+    live: { variant: 'success', label: 'Canlı' },
+    ended: { variant: 'default', label: 'Bitti' },
+    archived: { variant: 'default', label: 'Arşiv' },
+    rejected: { variant: 'danger', label: 'Reddedildi' },
+  },
   confession_category: {
     confession: { variant: 'primary', label: 'İtiraf' },
     question: { variant: 'info', label: 'Soru' },
@@ -60,6 +70,7 @@ const MAPS: Record<string, BadgeMap> = {
   bool_admin: { true: { variant: 'primary', label: 'Admin' }, false: { variant: 'default', label: '—' } },
   bool_banned: { true: { variant: 'danger', label: 'Banlı' }, false: { variant: 'success', label: 'Aktif' } },
   bool_restricted: { true: { variant: 'secondary', label: 'Kısıtlı' }, false: { variant: 'default', label: '—' } },
+  bool_sponsored: { true: { variant: 'primary', label: 'Sponsorlu' }, false: { variant: 'default', label: '—' } },
 }
 
 /** Normalize boolean | 'true'/'false' | pg 't'/'f' | enum string → lookup key. */
