@@ -296,7 +296,9 @@ export class ConfessionsService {
   /** Map create_confession_v2 / _comment_v2 P0001 exceptions to canonical error codes. */
   private mapWriteError(err: unknown): AppError {
     if (err instanceof AppError) return err
-    const message = (err as { message?: string })?.message ?? ''
+    // drizzle wraps the pg error; the RPC's raised message lives on `.cause`.
+    const cause = (err as { cause?: { message?: string } })?.cause
+    const message = cause?.message ?? (err as { message?: string })?.message ?? ''
     if (message.includes('Çok hızlı')) {
       return new AppError('RATE_LIMIT_EXCEEDED', 'Çok hızlı gönderim — lütfen biraz bekleyin.')
     }

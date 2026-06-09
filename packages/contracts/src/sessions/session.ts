@@ -25,6 +25,21 @@ export const sessionFeedQuerySchema = z.object({
 })
 export type SessionFeedQuery = z.infer<typeof sessionFeedQuerySchema>
 
+/** Create a study session. university_domain + status are server-set; creator auto-joins. */
+export const createSessionBodySchema = z.object({
+  courseId: z.string().uuid().nullable().default(null),
+  title: z.string().max(200).nullable().default(null),
+  description: z.string().max(2000).nullable().default(null),
+  locationName: z.string().trim().min(1).max(200),
+  startsAt: z.string(),
+  endsAt: z.string().nullable().default(null),
+  maxParticipants: z.coerce.number().int().min(2).max(20),
+})
+export type CreateSessionBody = z.infer<typeof createSessionBodySchema>
+
+export const createSessionResultSchema = z.object({ id: z.string() })
+export type CreateSessionResult = z.infer<typeof createSessionResultSchema>
+
 /** One feed row — the EXACT 17 columns get_sessions_feed returns, snake_case. */
 export const sessionFeedRowSchema = z.object({
   id: z.string(),
