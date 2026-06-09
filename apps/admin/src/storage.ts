@@ -11,13 +11,16 @@
 interface SignedField {
   field: string
   bucket: string
+  /** 'always' = run the image transform (web-format output, decodes HEIC); 'image-only'
+   *  = transform only when the row is an image (notes can be a PDF → keep original). */
+  transform: 'always' | 'image-only'
 }
 
 /** Private-bucket image/file columns per resource that need signing. */
 const SIGNED_FIELDS: Record<string, SignedField[]> = {
-  confessions: [{ field: 'image_url', bucket: 'confessions' }],
-  notes: [{ field: 'file_url', bucket: 'notes' }],
-  community_posts: [{ field: 'image_url', bucket: 'communities' }],
+  confessions: [{ field: 'image_url', bucket: 'confessions', transform: 'always' }],
+  notes: [{ field: 'file_url', bucket: 'notes', transform: 'image-only' }],
+  community_posts: [{ field: 'image_url', bucket: 'communities', transform: 'always' }],
 }
 
 /** Normalize a stored value to a storage path, or null when it's an external/public URL to leave as-is. */
@@ -29,8 +32,13 @@ function toStoragePath(value: string, bucket: string): string | null {
   return m && m[1] ? decodeURIComponent(m[1]) : null
 }
 
-/** Create a 1h signed URL via the Supabase Storage REST API (service-role key). */
-async function signUrl(bucket: string, path: string): Promise<string | null> {
+/**
+ * Create a 1h signed URL via the Supabase Storage REST API (service-role key).
+ * When `transform` is set, the URL goes through the image transform pipeline
+ * (imgproxy) which re-encodes to a browser format (webp/jpeg) — this is what makes
+ * iPhone .heic photos viewable in the admin.
+ */
+async function signUrl(bucket: string, path: string, transform: boolean): Promise<string | null> {
   const base = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!base || !key) return null
@@ -39,7 +47,10 @@ async function signUrl(bucket: string, path: string): Promise<string | null> {
     const res = await fetch(`${base}/storage/v1/object/sign/${bucket}/${encoded}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ expiresIn: 3600 }),
+      body: JSON.stringify({
+        expiresIn: 3600,
+        ...(transform ? { transform: { width: 1400, quality: 80 } } : {}),
+      }),
     })
     if (!res.ok) return null
     const json = (await res.json()) as { signedURL?: string; signedUrl?: string }
@@ -51,15 +62,20 @@ async function signUrl(bucket: string, path: string): Promise<string | null> {
   }
 }
 
+function isImageRow(params: Record<string, unknown>): boolean {
+  return String(params['file_type'] ?? '').toLowerCase().includes('image')
+}
+
 async function signRecordImages(resourceId: string, params?: Record<string, unknown>): Promise<void> {
   const fields = SIGNED_FIELDS[resourceId]
   if (!params || !fields) return
-  for (const { field, bucket } of fields) {
+  for (const { field, bucket, transform } of fields) {
     const v = params[field]
     if (typeof v !== 'string' || v === '') continue
     const path = toStoragePath(v, bucket)
     if (!path) continue // external / public URL → leave as-is
-    const signed = await signUrl(bucket, path)
+    const doTransform = transform === 'always' || (transform === 'image-only' && isImageRow(params))
+    const signed = await signUrl(bucket, path, doTransform)
     if (signed) params[field] = signed
   }
 }

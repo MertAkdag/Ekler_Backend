@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import type { ActionProps, RecordJSON } from 'adminjs'
 import { Badge, Box, H4, Icon, Text } from '@adminjs/design-system'
 
@@ -78,6 +78,32 @@ const Dash: React.FC = () => (
   <Text as="span" color="grey60" style={{ margin: 0 }}>—</Text>
 )
 
+/** Image with a graceful fallback: if the browser can't render it (e.g. a raw .heic
+ *  the transform didn't convert) show an "open" link instead of a blank. */
+const ImageCell: React.FC<{ url: string; w: number; h: number }> = ({ url, w, h }) => {
+  const [broken, setBroken] = useState(false)
+  if (broken) {
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#4268F6' }}>
+        Görseli aç ↗
+      </a>
+    )
+  }
+  return (
+    <Box
+      as="img"
+      src={url}
+      alt=""
+      width={w}
+      height={h}
+      borderRadius={8}
+      bg="grey20"
+      style={{ objectFit: 'cover', display: 'block' }}
+      onError={() => setBroken(true)}
+    />
+  )
+}
+
 const ValueRow: React.FC<{ row: Row; record?: RecordJSON }> = ({ row, record }) => {
   const raw = record?.params?.[row.key]
   const empty = raw === null || raw === undefined || raw === ''
@@ -90,24 +116,7 @@ const ValueRow: React.FC<{ row: Row; record?: RecordJSON }> = ({ row, record }) 
       break
 
     case 'image':
-      value = empty ? (
-        <Dash />
-      ) : (
-        <Box
-          as="img"
-          src={String(raw)}
-          alt=""
-          width={160}
-          height={90}
-          borderRadius={8}
-          bg="grey20"
-          style={{ objectFit: 'cover', display: 'block' }}
-          onError={(e: React.SyntheticEvent) => {
-            const t = e.currentTarget as unknown as { style?: { display?: string } }
-            if (t?.style) t.style.display = 'none'
-          }}
-        />
-      )
+      value = empty ? <Dash /> : <ImageCell url={String(raw)} w={160} h={90} />
       break
 
     case 'file': {
@@ -115,22 +124,9 @@ const ValueRow: React.FC<{ row: Row; record?: RecordJSON }> = ({ row, record }) 
       if (empty) { value = <Dash />; break }
       const url = String(raw)
       const ft = String(record?.params?.['file_type'] ?? '').toLowerCase()
-      const isImg = ft.includes('image') || /\.(png|jpe?g|gif|webp)(\?|$)/i.test(url)
+      const isImg = ft.includes('image') || /\.(png|jpe?g|gif|webp|heic)(\?|$)/i.test(url)
       value = isImg ? (
-        <Box
-          as="img"
-          src={url}
-          alt=""
-          width={220}
-          height={140}
-          borderRadius={8}
-          bg="grey20"
-          style={{ objectFit: 'cover', display: 'block' }}
-          onError={(e: React.SyntheticEvent) => {
-            const t = e.currentTarget as unknown as { style?: { display?: string } }
-            if (t?.style) t.style.display = 'none'
-          }}
-        />
+        <ImageCell url={url} w={220} h={140} />
       ) : (
         <a href={url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#4268F6', wordBreak: 'break-all' }}>Dosyayı Aç ↗</a>
       )
