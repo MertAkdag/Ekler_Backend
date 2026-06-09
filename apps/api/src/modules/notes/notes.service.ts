@@ -1,9 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { and, desc, eq, sql } from 'drizzle-orm'
-import type { NoteFeedQuery, NoteFeedRow } from '@ekler/contracts'
+import type { NoteFeedQuery, NoteFeedRow, NoteVoteBody } from '@ekler/contracts'
 import { DRIZZLE, type Db } from '../../db/drizzle.module'
 import { ScopedRepository } from '../../db/scoped/scoped-repository'
 import { courses, noteVotes, notes, profiles, userSettings } from '../../db/schema'
+import { AppError } from '../../core/errors/app-error'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 
 /**
@@ -77,5 +78,39 @@ export class NotesService {
       .limit(q.limit)
 
     return rows as NoteFeedRow[]
+  }
+
+  /**
+   * Cast / change / remove the caller's vote on a note (matches the RN castVote:
+   * delete the old vote, then insert the new one if `direction` isn't null). The
+   * notes.vote_score denorm is recomputed by the trg_sync_note_vote_score trigger —
+   * a recount, so it's idempotent and safe. Anti-K-1: the note must be in the caller's
+   * university (cross-uni vote → 404).
+   */
+  async vote(noteId: string, body: NoteVoteBody, user: AuthPrincipal): Promise<void> {
+    this.scope.domain() // fail-closed
+    const uid = user.userId
+
+    const found = await this.db
+      .select({ id: notes.id })
+      .from(notes)
+      .where(and(this.scope.scopeFilter(notes.universityDomain), sql`${notes.id} = ${noteId}::uuid`))
+      .limit(1)
+    if (found.length === 0) throw new AppError('NOT_FOUND', 'Not bulunamadı.')
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(noteVotes)
+        .where(
+          and(sql`${noteVotes.noteId} = ${noteId}::uuid`, sql`${noteVotes.userId} = ${uid}::uuid`),
+        )
+      if (body.direction) {
+        await tx.insert(noteVotes).values({
+          noteId,
+          userId: uid,
+          direction: body.direction,
+        })
+      }
+    })
   }
 }

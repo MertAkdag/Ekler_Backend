@@ -1,9 +1,9 @@
-import { Controller, Get, Query } from '@nestjs/common'
+import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common'
 import type { NoteFeedRow } from '@ekler/contracts'
 import { CurrentUser } from '../../core/auth/public.decorator'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 import { NotesService } from './notes.service'
-import { NoteFeedQueryDto } from './notes.dto'
+import { NoteFeedQueryDto, NoteVoteBodyDto } from './notes.dto'
 
 @Controller('notes')
 export class NotesController {
@@ -16,5 +16,16 @@ export class NotesController {
     @Query() q: NoteFeedQueryDto,
   ): Promise<NoteFeedRow[]> {
     return this.notes.feed(q, user)
+  }
+
+  /** Vote on a note (up/down/null=remove). vote_score is recomputed by a DB trigger. */
+  @Post(':id/vote')
+  @HttpCode(204)
+  vote(
+    @CurrentUser() user: AuthPrincipal,
+    @Param('id') noteId: string,
+    @Body() body: NoteVoteBodyDto,
+  ): Promise<void> {
+    return this.notes.vote(noteId, body, user)
   }
 }

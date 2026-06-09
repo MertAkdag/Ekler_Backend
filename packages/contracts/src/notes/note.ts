@@ -19,6 +19,12 @@ export const noteFeedQuerySchema = z.object({
 })
 export type NoteFeedQuery = z.infer<typeof noteFeedQuerySchema>
 
+/** Vote on a note: 'up' | 'down' | null (null removes the caller's vote). */
+export const noteVoteBodySchema = z.object({
+  direction: z.enum(['up', 'down']).nullable(),
+})
+export type NoteVoteBody = z.infer<typeof noteVoteBodySchema>
+
 /** One feed row — the EXACT columns get_notes_feed returns, snake_case (RN maps it). */
 export const noteFeedRowSchema = z.object({
   id: z.string(),
