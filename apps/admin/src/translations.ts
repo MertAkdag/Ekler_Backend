@@ -57,7 +57,7 @@ export const TR_TRANSLATIONS = {
   },
   labels: {
     navigation: 'Menü',
-    pages: 'Sayfalar',
+    pages: 'Genel Bakış',
     selectedRecords: 'Seçili ({{selected}})',
     filters: 'Filtreler',
     adminVersion: 'Panel: {{version}}',
@@ -236,5 +236,10 @@ export const TR_TRANSLATIONS = {
     password_hash: 'Şifre (hash)',
     email_change: 'E-posta Değişikliği',
     phone_change: 'Telefon Değişikliği',
+  },
+  // Custom page sidebar labels (i18n key: pages.<pageName>).
+  pages: {
+    citiesHub: 'Şehirler',
+    universitiesHub: 'Üniversiteler',
   },
 }

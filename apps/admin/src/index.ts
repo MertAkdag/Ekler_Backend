@@ -7,6 +7,7 @@ import { TR_TRANSLATIONS } from './translations.js'
 import { buildResources } from './resources.js'
 import { Components, componentLoader } from './components.js'
 import { dashboardHandler } from './stats.js'
+import { citiesHubHandler, universitiesHubHandler } from './hubs.js'
 
 /**
  * Ekler Admin — v2.
@@ -51,6 +52,10 @@ const start = async (): Promise<void> => {
     branding: { companyName: 'Ekler Yönetim' },
     componentLoader,
     dashboard: { component: Components.Dashboard, handler: dashboardHandler },
+    pages: {
+      citiesHub: { component: Components.Hub, handler: citiesHubHandler, icon: 'Map' },
+      universitiesHub: { component: Components.Hub, handler: universitiesHubHandler, icon: 'Award' },
+    },
     locale: {
       language: 'tr',
       availableLanguages: ['tr'],

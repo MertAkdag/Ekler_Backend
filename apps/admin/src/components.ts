@@ -7,4 +7,5 @@ export const Components = {
   Dashboard: componentLoader.add('Dashboard', './components/dashboard'),
   StatusBadge: componentLoader.add('StatusBadge', './components/status-badge'),
   Thumbnail: componentLoader.add('Thumbnail', './components/thumbnail'),
+  Hub: componentLoader.add('Hub', './components/hub'),
 }
