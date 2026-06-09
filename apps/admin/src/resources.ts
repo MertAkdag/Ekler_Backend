@@ -9,6 +9,7 @@ import {
   userActions,
 } from './actions.js'
 import { Components } from './components.js'
+import { signImagesAfter } from './storage.js'
 
 /**
  * Per-resource AdminJS options (the v1 panel registered raw tables with every
@@ -330,7 +331,7 @@ export function buildResources(publicDb: SqlDatabase, authDb: SqlDatabase): Reso
     // the RecordActionResponse↔ActionResponse variance from spreading typed actions.
     const baseActions = ACTIONS_BY_TABLE[cfg.table]
     const actions = (SHOW_COMPONENT_TABLES.has(cfg.table)
-      ? { ...baseActions, show: { component: Components.RecordShow } }
+      ? { ...baseActions, show: { component: Components.RecordShow, after: signImagesAfter(cfg.table) } }
       : baseActions) as ResourceOptions['actions']
     // Only include showProperties/editProperties when actually set: AdminJS spreads
     // list-option arrays unconditionally (build-feature.js), so a present-but-undefined
