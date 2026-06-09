@@ -9,6 +9,18 @@ export const TR_TRANSLATIONS = {
     bulkDelete: 'Toplu Sil',
     search: 'Ara',
     filter: 'Filtrele',
+    // moderation record-actions
+    hide: 'Gizle',
+    publish: 'Yayınla',
+    review: 'İncelendi',
+    dismiss: 'Reddet',
+    activate: 'Aktifleştir',
+    deactivate: 'Pasifleştir',
+    approve: 'Onayla',
+    reject: 'Reddet',
+    ban: 'Kalıcı Yasakla',
+    tempBan: 'Geçici Yasakla (7g)',
+    unban: 'Yasağı Kaldır',
   },
   buttons: {
     save: 'Kaydet',

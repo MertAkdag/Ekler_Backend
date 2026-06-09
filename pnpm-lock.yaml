@@ -39,6 +39,9 @@ importers:
       express-session:
         specifier: ^1.18.1
         version: 1.19.0
+      pg:
+        specifier: ^8.13.1
+        version: 8.21.0
     devDependencies:
       '@types/express':
         specifier: ^4.17.21
@@ -49,6 +52,9 @@ importers:
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.20
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.20.0
       tsx:
         specifier: ^4.19.2
         version: 4.22.4

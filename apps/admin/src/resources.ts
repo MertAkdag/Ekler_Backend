@@ -1,5 +1,13 @@
-import type { PropertyOptions, ResourceWithOptions } from 'adminjs'
+import type { PropertyOptions, ResourceOptions, ResourceWithOptions } from 'adminjs'
 import type { ResourceMetadata } from '@adminjs/sql'
+import {
+  communityActions,
+  contentActions,
+  eventSubmissionActions,
+  noteActions,
+  reportActions,
+  userActions,
+} from './actions.js'
 
 /**
  * Per-resource AdminJS options (the v1 panel registered raw tables with every
@@ -191,6 +199,17 @@ interface SqlDatabase {
   table(name: string): ResourceMetadata
 }
 
+/** Moderation actions per table (merged with AdminJS default actions). */
+const ACTIONS_BY_TABLE: Record<string, ResourceOptions['actions']> = {
+  confessions: contentActions('confessions'),
+  confession_comments: contentActions('confession_comments'),
+  notes: noteActions(),
+  reports: reportActions(),
+  communities: communityActions(),
+  event_submissions: eventSubmissionActions(),
+  profiles: userActions(),
+}
+
 /** Apply the HIDE / READONLY policy to whichever of a resource's real columns match. */
 function buildProperties(resource: ResourceMetadata): Record<string, PropertyOptions> {
   const props: Record<string, PropertyOptions> = {}
@@ -218,6 +237,7 @@ export function buildResources(publicDb: SqlDatabase, authDb: SqlDatabase): Reso
         sort: cfg.sort,
         listProperties: cfg.list,
         properties: buildProperties(resource),
+        actions: ACTIONS_BY_TABLE[cfg.table],
       },
     }
   })
