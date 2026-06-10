@@ -43,6 +43,25 @@ export const envSchema = z.object({
   // regardless of per-token TTL. Default 90d.
   AUTH_FAMILY_TTL: z.coerce.number().int().positive().default(7_776_000),
 
+  // Object storage (Phase 4) — provider-neutral S3 API. Works against self-hosted
+  // MinIO (our VPS), Cloudflare R2, or AWS S3; only these values differ. Storage
+  // is DISABLED until endpoint + keys are present (StorageService.enabled).
+  //   MinIO note: set STORAGE_FORCE_PATH_STYLE=true (MinIO needs path-style URLs).
+  STORAGE_ENDPOINT: z.string().url().optional(),
+  STORAGE_REGION: z.string().default('auto'),
+  STORAGE_ACCESS_KEY_ID: z.string().optional(),
+  STORAGE_SECRET_ACCESS_KEY: z.string().optional(),
+  STORAGE_FORCE_PATH_STYLE: z
+    .preprocess((v) => (typeof v === 'string' ? v === '1' || v.toLowerCase() === 'true' : v), z.boolean())
+    .default(true),
+  // Public base URL for the public bucket (communities) — direct, un-signed reads.
+  STORAGE_PUBLIC_URL: z.string().url().optional(),
+  STORAGE_BUCKET_CONFESSIONS: z.string().default('ekler-confessions'),
+  STORAGE_BUCKET_NOTES: z.string().default('ekler-notes'),
+  STORAGE_BUCKET_COMMUNITIES: z.string().default('ekler-communities'),
+  STORAGE_SIGN_TTL: z.coerce.number().int().positive().default(3_600), // signed-read URL TTL (s)
+  STORAGE_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(20 * 1024 * 1024),
+
   // Infra (phase-gated)
   REDIS_URL: z.string().optional(),
   SENTRY_DSN: z.string().optional(),

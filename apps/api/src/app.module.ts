@@ -10,6 +10,7 @@ import { EventsModule } from './modules/events/events.module'
 import { CommunitiesModule } from './modules/communities/communities.module'
 import { ReportsModule } from './modules/reports/reports.module'
 import { AuthModule } from './modules/auth/auth.module'
+import { StorageModule } from './modules/storage/storage.module'
 
 /**
  * Root module. CoreModule is the cross-cutting backbone (guards, pipe,
@@ -31,6 +32,7 @@ import { AuthModule } from './modules/auth/auth.module'
     EventsModule,
     CommunitiesModule,
     ReportsModule,
+    StorageModule,
   ],
 })
 export class AppModule {}
