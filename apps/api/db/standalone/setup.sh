@@ -10,6 +10,9 @@
 #                    data — empty start). 62 tables, 243 functions, 15 triggers, the
 #                    moderation engine, 124 RLS policies (inert: Node connects as a
 #                    superuser/bypassrls role and enforces tenancy itself).
+#   03-auth-p8.sql   own-auth (P8) tables: auth_otp_codes + auth_sessions + the
+#                    case-insensitive email uniques + resolve_university_domain().
+#                    REQUIRED — without it /v1/auth/* 500s against a fresh DB.
 #
 # Usage:  PGPORT=5433 ./setup.sh        (defaults: PG17 brew, port 5433, db "ekler")
 # Point the API at it:  DATABASE_URL=postgresql://$(whoami)@localhost:5433/ekler
@@ -27,5 +30,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 "$PGBIN/psql"     -p "$PORT" -U "$SUPER" -d "$DB" -v ON_ERROR_STOP=1 -f "$DIR/01-bootstrap.sql"
 # 02-schema.sql emits one benign 'schema "public" already exists' — do not stop on it.
 "$PGBIN/psql"     -p "$PORT" -U "$SUPER" -d "$DB" -f "$DIR/02-schema.sql"
+# 03-auth-p8.sql owns the OTP + refresh-session tables; must apply for /v1/auth/* to work.
+"$PGBIN/psql"     -p "$PORT" -U "$SUPER" -d "$DB" -v ON_ERROR_STOP=1 -f "$DIR/03-auth-p8.sql"
 
 echo "✓ standalone '$DB' ready on :$PORT (DATABASE_URL=postgresql://$SUPER@localhost:$PORT/$DB)"

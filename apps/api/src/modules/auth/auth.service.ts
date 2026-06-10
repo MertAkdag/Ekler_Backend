@@ -82,80 +82,108 @@ export class AuthService {
   async refresh(presented: string, ip: string | null, userAgent: string | null): Promise<AuthSession> {
     const presentedHash = this.tokens.hashRefreshToken(presented)
 
-    return await this.db.transaction(async (tx) => {
-      const res = (await tx.execute(sql`
-        select id, user_id, family_id, expires_at, revoked_at
-        from public.auth_sessions
-        where refresh_token_hash = ${presentedHash}
-        limit 1
-        for update
-      `)) as unknown as {
-        rows: Array<{
-          id: string
-          user_id: string
-          family_id: string
-          expires_at: string
-          revoked_at: string | null
-        }>
-      }
-      const row = res.rows[0]
-      if (!row) throw new AppError('INVALID_REFRESH', 'Oturum geçersiz.')
+    // The transaction RETURNS a discriminated outcome instead of throwing: a thrown
+    // error rolls the tx back, which would also undo the breach-response revoke
+    // (reuse → whole family). So we commit the revoke here, then reject outside.
+    const outcome = await this.db.transaction(
+      async (
+        tx,
+      ): Promise<{ kind: 'rejected' } | { kind: 'ok'; session: AuthSession }> => {
+        const res = (await tx.execute(sql`
+          select id, user_id, family_id, expires_at, family_expires_at, revoked_at
+          from public.auth_sessions
+          where refresh_token_hash = ${presentedHash}
+          limit 1
+          for update
+        `)) as unknown as {
+          rows: Array<{
+            id: string
+            user_id: string
+            family_id: string
+            expires_at: string
+            family_expires_at: string
+            revoked_at: string | null
+          }>
+        }
+        const row = res.rows[0]
+        if (!row) return { kind: 'rejected' }
 
-      // Reuse detection: a token that was already rotated/revoked is replayed →
-      // revoke the entire family (breach response).
-      if (row.revoked_at !== null) {
+        // Reuse detection: a token that was already rotated/revoked is replayed →
+        // revoke the entire family (breach response). Committed via the returned outcome.
+        if (row.revoked_at !== null) {
+          await tx.execute(sql`
+            update public.auth_sessions
+               set revoked_at = now(), revoked_reason = 'reuse_detected'
+             where family_id = ${row.family_id} and revoked_at is null
+          `)
+          return { kind: 'rejected' }
+        }
+
+        // Absolute family cap: a continuously-rotating (incl. silently-stolen) chain
+        // dies once it passes family_expires_at, no matter the per-token TTL.
+        if (new Date(row.family_expires_at).getTime() <= Date.now()) {
+          await tx.execute(sql`
+            update public.auth_sessions
+               set revoked_at = now(), revoked_reason = 'family_expired'
+             where family_id = ${row.family_id} and revoked_at is null
+          `)
+          return { kind: 'rejected' }
+        }
+
+        if (new Date(row.expires_at).getTime() <= Date.now()) {
+          await tx.execute(sql`
+            update public.auth_sessions
+               set revoked_at = now(), revoked_reason = 'expired'
+             where id = ${row.id}
+          `)
+          return { kind: 'rejected' }
+        }
+
+        // Rotate: mint new opaque token, insert child row (same family, same family
+        // cap), revoke old.
+        const newToken = this.tokens.generateRefreshToken()
+        const newHash = this.tokens.hashRefreshToken(newToken)
+        const expiresAt = new Date(Date.now() + this.env.AUTH_REFRESH_TTL * 1000)
         await tx.execute(sql`
-          update public.auth_sessions
-             set revoked_at = now(), revoked_reason = 'reuse_detected'
-           where family_id = ${row.family_id} and revoked_at is null
+          insert into public.auth_sessions
+            (user_id, refresh_token_hash, family_id, parent_id, expires_at, family_expires_at, user_agent, ip)
+          values
+            (${row.user_id}, ${newHash}, ${row.family_id}, ${row.id},
+             ${expiresAt.toISOString()}, ${row.family_expires_at}, ${userAgent}, ${ip})
         `)
-        throw new AppError('INVALID_REFRESH', 'Oturum geçersiz.')
-      }
-
-      if (new Date(row.expires_at).getTime() <= Date.now()) {
         await tx.execute(sql`
           update public.auth_sessions
-             set revoked_at = now(), revoked_reason = 'expired'
+             set revoked_at = now(), revoked_reason = 'rotated'
            where id = ${row.id}
         `)
-        throw new AppError('INVALID_REFRESH', 'Oturum geçersiz.')
-      }
 
-      // Rotate: mint new opaque token, insert child row (same family), revoke old.
-      const newToken = this.tokens.generateRefreshToken()
-      const newHash = this.tokens.hashRefreshToken(newToken)
-      const expiresAt = new Date(Date.now() + this.env.AUTH_REFRESH_TTL * 1000)
-      await tx.execute(sql`
-        insert into public.auth_sessions
-          (user_id, refresh_token_hash, family_id, parent_id, expires_at, user_agent, ip)
-        values
-          (${row.user_id}, ${newHash}, ${row.family_id}, ${row.id},
-           ${expiresAt.toISOString()}, ${userAgent}, ${ip})
-      `)
-      await tx.execute(sql`
-        update public.auth_sessions
-           set revoked_at = now(), revoked_reason = 'rotated'
-         where id = ${row.id}
-      `)
+        const profile = await this.loadProfile(row.user_id, tx)
+        const emailRow = (await tx.execute(sql`
+          select email from public.profiles where id = ${row.user_id} limit 1
+        `)) as unknown as { rows: Array<{ email: string }> }
+        const email = emailRow.rows[0]?.email ?? ''
+        const access = await this.tokens.signAccess({
+          userId: row.user_id,
+          email,
+          universityDomain: profile.university_domain,
+        })
+        return {
+          kind: 'ok',
+          session: {
+            access_token: access.token,
+            refresh_token: newToken,
+            token_type: 'bearer' as const,
+            expires_in: access.expiresIn,
+            user: profile,
+          },
+        }
+      },
+    )
 
-      const profile = await this.loadProfile(row.user_id, tx)
-      const emailRow = (await tx.execute(sql`
-        select email from public.profiles where id = ${row.user_id} limit 1
-      `)) as unknown as { rows: Array<{ email: string }> }
-      const email = emailRow.rows[0]?.email ?? ''
-      const access = await this.tokens.signAccess({
-        userId: row.user_id,
-        email,
-        universityDomain: profile.university_domain,
-      })
-      return {
-        access_token: access.token,
-        refresh_token: newToken,
-        token_type: 'bearer' as const,
-        expires_in: access.expiresIn,
-        user: profile,
-      }
-    })
+    if (outcome.kind === 'rejected') {
+      throw new AppError('INVALID_REFRESH', 'Oturum geçersiz.')
+    }
+    return outcome.session
   }
 
   /** POST /auth/logout — revoke the presented session (idempotent). */
@@ -248,13 +276,15 @@ export class AuthService {
     const access = await this.tokens.signAccess({ userId, email, universityDomain })
     const refreshToken = this.tokens.generateRefreshToken()
     const refreshHash = this.tokens.hashRefreshToken(refreshToken)
-    const expiresAt = new Date(Date.now() + this.env.AUTH_REFRESH_TTL * 1000)
+    const now = Date.now()
+    const expiresAt = new Date(now + this.env.AUTH_REFRESH_TTL * 1000)
+    const familyExpiresAt = new Date(now + this.env.AUTH_FAMILY_TTL * 1000)
     await this.db.execute(sql`
       insert into public.auth_sessions
-        (user_id, refresh_token_hash, family_id, expires_at, user_agent, ip)
+        (user_id, refresh_token_hash, family_id, expires_at, family_expires_at, user_agent, ip)
       values
         (${userId}, ${refreshHash}, gen_random_uuid(), ${expiresAt.toISOString()},
-         ${userAgent}, ${ip})
+         ${familyExpiresAt.toISOString()}, ${userAgent}, ${ip})
     `)
     return {
       access_token: access.token,

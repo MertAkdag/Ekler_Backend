@@ -14,7 +14,7 @@ import { DRIZZLE, type Db } from '../../db/drizzle.module'
 import { AppError } from '../errors/app-error'
 import type { AppClsStore, AuthPrincipal } from '../cls/cls-store'
 import { IS_PUBLIC_KEY } from './public.decorator'
-import { TokenService, OWN_KIDS } from '../../modules/auth/token.service'
+import { TokenService } from '../../modules/auth/token.service'
 
 /**
  * Dual-accept auth bridge.
@@ -86,7 +86,7 @@ export class AuthGuard implements CanActivate {
     } catch {
       throw new AppError('UNAUTHENTICATED', 'Malformed token.')
     }
-    const looksOwn = kid !== undefined && OWN_KIDS.has(kid)
+    const looksOwn = this.tokens.isOwnKid(kid)
 
     // 2) Own EdDSA path. Try first when the kid is ours; also try when there is
     //    no kid at all (own tokens always carry one, so this is cheap + safe).
@@ -101,6 +101,12 @@ export class AuthGuard implements CanActivate {
         if (looksOwn) throw new AppError('UNAUTHENTICATED', 'Invalid or expired token.')
         // else: not ours → fall through to the legacy verifier.
       }
+    }
+
+    // own_only kill switch: past the client cutover we stop honoring Supabase
+    // tokens entirely. Anything that didn't verify as ours above is rejected.
+    if (this.env.AUTH_MODE === 'own_only') {
+      throw new AppError('UNAUTHENTICATED', 'Invalid or expired token.')
     }
 
     // 3) Legacy Supabase path (JWKS RS/ES, or HS256 secret). Each verifier pins

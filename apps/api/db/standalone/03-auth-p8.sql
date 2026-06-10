@@ -51,7 +51,8 @@ create table if not exists public.auth_sessions (
   family_id           uuid        not null,      -- stable across a rotation chain
   parent_id           uuid        references public.auth_sessions(id) on delete set null,
   issued_at           timestamptz not null default now(),
-  expires_at          timestamptz not null,      -- issued_at + AUTH_REFRESH_TTL (30d), absolute cap
+  expires_at          timestamptz not null,      -- per-token TTL (issued_at + AUTH_REFRESH_TTL, 30d)
+  family_expires_at   timestamptz not null,      -- absolute family cap (first issue + AUTH_FAMILY_TTL, 90d); carried across rotations
   revoked_at          timestamptz,
   revoked_reason      text,                       -- 'rotated' | 'reuse_detected' | 'logout' | 'expired'
   user_agent          text,

@@ -15,9 +15,6 @@ import { ENV, type Env } from '../../config/env'
 export const AUTH_ALG = 'EdDSA'
 export const AUTH_ISSUER = 'ekler'
 export const AUTH_AUDIENCE = 'ekler-app'
-export const AUTH_KID = 'ek-ed25519-1'
-/** kids the guard recognizes as ours (current + previous, for rotation). */
-export const OWN_KIDS = new Set<string>([AUTH_KID])
 
 export interface MintedAccess {
   token: string
@@ -30,12 +27,19 @@ const normalizePem = (s: string): string => s.replace(/\\n/g, '\n')
  * EdDSA (Ed25519) signer/verifier for our own access tokens, plus opaque
  * refresh-token generation + hashing. Keys are imported ONCE at boot and cached.
  * If AUTH_JWT_* are absent, own-signing is disabled (Supabase bridge still works).
+ *
+ * Key rotation: we ALWAYS sign with the current key (`signingKid`), but verify
+ * against a kid→key map that may also hold one previous (verify-only) key so
+ * tokens signed just before a rotation keep working until they expire. The JWKS
+ * publishes every public key in the map.
  */
 @Injectable()
 export class TokenService implements OnModuleInit {
   private signingKey: KeyLike | null = null
-  private verifyKey: KeyLike | null = null
-  private publicJwk: JWK | null = null
+  private signingKid = ''
+  /** kid → public verify key (current + optional previous). */
+  private readonly verifyKeys = new Map<string, KeyLike>()
+  private publicJwks: JWK[] = []
 
   constructor(@Inject(ENV) private readonly env: Env) {}
 
@@ -43,25 +47,39 @@ export class TokenService implements OnModuleInit {
     const priv = this.env.AUTH_JWT_PRIVATE_KEY
     const pub = this.env.AUTH_JWT_PUBLIC_KEY
     if (!priv || !pub) return // own-auth not configured yet → dual-accept falls back to Supabase
+
+    this.signingKid = this.env.AUTH_JWT_KID
     this.signingKey = (await importPKCS8(normalizePem(priv), AUTH_ALG)) as KeyLike
-    this.verifyKey = (await importSPKI(normalizePem(pub), AUTH_ALG)) as KeyLike
-    const jwk = await exportJWK(this.verifyKey)
-    this.publicJwk = { ...jwk, alg: AUTH_ALG, use: 'sig', kid: AUTH_KID }
+    await this.registerVerifyKey(this.signingKid, pub)
+
+    // Optional previous key (verify-only) for a rotation overlap. Both-or-neither.
+    const prevPub = this.env.AUTH_JWT_PUBLIC_KEY_PREV
+    const prevKid = this.env.AUTH_JWT_KID_PREV
+    if (prevPub && prevKid && prevKid !== this.signingKid) {
+      await this.registerVerifyKey(prevKid, prevPub)
+    }
+  }
+
+  private async registerVerifyKey(kid: string, spki: string): Promise<void> {
+    const key = (await importSPKI(normalizePem(spki), AUTH_ALG)) as KeyLike
+    this.verifyKeys.set(kid, key)
+    const jwk = await exportJWK(key)
+    this.publicJwks.push({ ...jwk, alg: AUTH_ALG, use: 'sig', kid })
   }
 
   /** True when AUTH_JWT_* are present and imported (own tokens can be minted/verified). */
   get enabled(): boolean {
-    return this.signingKey !== null && this.verifyKey !== null
+    return this.signingKey !== null
   }
 
-  /** Public verification key (Ed25519 public) — used by AuthGuard for own-token verify. */
-  getVerifyKey(): KeyLike | null {
-    return this.verifyKey
+  /** Whether `kid` belongs to us (current or a still-accepted previous key). */
+  isOwnKid(kid: string | undefined): boolean {
+    return kid !== undefined && this.verifyKeys.has(kid)
   }
 
-  /** JWKS for /.well-known/jwks.json (public key only, never `d`). */
+  /** JWKS for /.well-known/jwks.json (public keys only, never `d`). */
   getJwks(): { keys: JWK[] } {
-    return { keys: this.publicJwk ? [this.publicJwk] : [] }
+    return { keys: this.publicJwks }
   }
 
   /**
@@ -82,7 +100,7 @@ export class TokenService implements OnModuleInit {
       email: params.email,
       university_domain: params.universityDomain, // convenience only; non-authoritative
     })
-      .setProtectedHeader({ alg: AUTH_ALG, kid: AUTH_KID, typ: 'JWT' })
+      .setProtectedHeader({ alg: AUTH_ALG, kid: this.signingKid, typ: 'JWT' })
       .setSubject(params.userId) // sub == profiles.id == auth.users.id
       .setIssuer(AUTH_ISSUER)
       .setAudience(AUTH_AUDIENCE)
@@ -92,14 +110,26 @@ export class TokenService implements OnModuleInit {
     return { token, expiresIn: ttl }
   }
 
-  /** Verify an own EdDSA token. Pinned alg/iss/aud. Throws on any failure. */
+  /**
+   * Verify an own EdDSA token. The key is selected by the token's kid from our
+   * verify map (current or previous), so a token minted before a rotation still
+   * validates. Pinned alg/iss/aud. Throws on any failure (unknown kid included).
+   */
   async verifyAccess(token: string): Promise<JWTPayload> {
-    if (!this.verifyKey) throw new Error('TokenService: verify key not configured')
-    const { payload } = await jwtVerify(token, this.verifyKey, {
-      algorithms: [AUTH_ALG], // CRITICAL: only EdDSA — locks out alg confusion
-      issuer: AUTH_ISSUER,
-      audience: AUTH_AUDIENCE,
-    })
+    if (this.verifyKeys.size === 0) throw new Error('TokenService: verify key not configured')
+    const { payload } = await jwtVerify(
+      token,
+      (header) => {
+        const key = header.kid !== undefined ? this.verifyKeys.get(header.kid) : undefined
+        if (!key) throw new Error(`TokenService: unknown kid ${String(header.kid)}`)
+        return key
+      },
+      {
+        algorithms: [AUTH_ALG], // CRITICAL: only EdDSA — locks out alg confusion
+        issuer: AUTH_ISSUER,
+        audience: AUTH_AUDIENCE,
+      },
+    )
     return payload
   }
 
