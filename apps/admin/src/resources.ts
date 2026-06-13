@@ -10,6 +10,7 @@ import {
   reportActions,
   userActions,
   wordRuleActions,
+  wordRuleNormalizeBefore,
 } from './actions.js'
 import { Components } from './components.js'
 import { signImagesAfter } from './storage.js'
@@ -344,7 +345,13 @@ const ACTIONS_BY_TABLE: Record<string, ResourceOptions['actions']> = {
   event_submissions: eventSubmissionActions(),
   community_requests: communityRequestActions(),
   moderation_appeals: appealActions(),
-  moderation_word_rules: wordRuleActions(),
+  moderation_word_rules: {
+    ...wordRuleActions(),
+    // Derive normalized_pattern on create/edit so panel rules actually match in
+    // the live engine (blank normalized_pattern never fires for exact_token/contains).
+    new: { before: wordRuleNormalizeBefore },
+    edit: { before: wordRuleNormalizeBefore },
+  },
   profiles: userActions(),
 }
 

@@ -421,6 +421,30 @@ export function appealActions(): Record<string, RecordAction> {
   }
 }
 
+/**
+ * @adminjs/sql `before` hook for moderation_word_rules new + edit. Panel-created
+ * rules otherwise leave normalized_pattern blank, and the live engine
+ * evaluate_moderation_rules only matches exact_token/contains rules when
+ * coalesce(normalized_pattern,'') <> '' (02-schema.sql L732/L735) — so such rules
+ * SILENTLY never fire. We derive normalized_pattern with the DB's own
+ * normalize_moderation_text(text)->text so panel rules behave like seeded ones.
+ * GET (form render) has no payload; a missing/empty NOT NULL pattern is left for
+ * native validation. regex rules use raw pattern so the value is harmless for them.
+ */
+export async function wordRuleNormalizeBefore(
+  request: ActionRequest,
+  _context: ActionContext,
+): Promise<ActionRequest> {
+  if (request.method !== 'post') return request
+  const payload = request.payload
+  if (!payload) return request
+  const raw = payload.pattern
+  if (typeof raw !== 'string' || raw.trim() === '') return request
+  const res = await pool.query<{ np: string | null }>('select public.normalize_moderation_text($1) as np', [raw])
+  request.payload = { ...payload, normalized_pattern: res.rows[0]?.np ?? '' }
+  return request
+}
+
 /** Otomatik moderasyon kelime kuralları — panelden hızlı aç/kapat. */
 export function wordRuleActions(): Record<string, RecordAction> {
   return {
