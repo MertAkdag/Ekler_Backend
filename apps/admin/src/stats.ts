@@ -74,6 +74,8 @@ export interface FlaggedItem {
   id: string
   source: string
   sourceLabel: string
+  flagKind: 'user' | 'auto'
+  label: string | null
   snippet: string
   university: string | null
   rel: string
@@ -134,23 +136,40 @@ const SQL_QUEUE = `
   limit 8
 `
 
+// Surfaces BOTH user-flagged content (is_flagged, report-driven) AND the auto
+// moderator's review queue (moderation_status='needs_review') — the latter was
+// previously invisible. flag_kind distinguishes the two so the moderator knows
+// whether a human reported it or the engine caught it (and why, via label).
+// Notes are included (the KPI counted them but the list omitted them).
 const SQL_FLAGGED = `
   (
     select c.id::text as id, 'confession'::text as source, left(c.body, 140) as snippet,
-           c.university_domain as university, c.created_at
+           c.university_domain as university,
+           case when c.is_flagged then 'user' else 'auto' end as flag_kind,
+           c.moderation_label as label, c.created_at
     from public.confessions c
-    where c.is_flagged = true
+    where c.is_flagged = true or c.moderation_status = 'needs_review'
   )
   union all
   (
     select cc.id::text as id, 'comment'::text as source, left(cc.body, 140) as snippet,
-           c2.university_domain as university, cc.created_at
+           c2.university_domain as university,
+           case when cc.is_flagged then 'user' else 'auto' end as flag_kind,
+           cc.moderation_label as label, cc.created_at
     from public.confession_comments cc
     join public.confessions c2 on c2.id = cc.confession_id
-    where cc.is_flagged = true
+    where cc.is_flagged = true or cc.moderation_status = 'needs_review'
+  )
+  union all
+  (
+    select n.id::text as id, 'note'::text as source, left(n.title, 140) as snippet,
+           n.university_domain as university,
+           'user'::text as flag_kind, null::text as label, n.created_at
+    from public.notes n
+    where n.is_flagged = true or n.is_hidden = true
   )
   order by created_at desc
-  limit 8
+  limit 10
 `
 
 const SQL_TREND = `
@@ -212,7 +231,7 @@ interface KpiRow {
   confessions_today: string; confessions_yesterday: string
 }
 interface QueueRow { id: string | number; target_type: string | null; reason: string | null; created_at: string }
-interface FlaggedRow { id: string; source: string; snippet: string | null; university: string | null; created_at: string }
+interface FlaggedRow { id: string; source: string; snippet: string | null; university: string | null; flag_kind: string; label: string | null; created_at: string }
 interface TrendRow { day: string; signups: number }
 interface UniRow { domain: string; name: string | null; total: number }
 interface CommRow { name: string | null; member_count: number; university_domain: string | null }
@@ -268,14 +287,19 @@ export async function dashboardHandler(): Promise<DashboardPayload> {
     }
   })
 
+  const FLAGGED_TABLE: Record<string, string> = {
+    confession: 'confessions', comment: 'confession_comments', note: 'notes',
+  }
   const flaggedContent: FlaggedItem[] = flaggedRes.rows.map((r) => ({
     id: r.id,
     source: r.source,
-    sourceLabel: r.source === 'comment' ? 'Yorum' : 'İtiraf',
+    sourceLabel: TARGET_LABEL[r.source] ?? r.source,
+    flagKind: r.flag_kind === 'auto' ? 'auto' : 'user',
+    label: r.label,
     snippet: r.snippet ?? '',
     university: r.university,
     rel: relTr(r.created_at),
-    href: r.source === 'comment' ? showHref('confession_comments', r.id) : showHref('confessions', r.id),
+    href: showHref(FLAGGED_TABLE[r.source] ?? 'confessions', r.id),
   }))
 
   const signupTrend: TrendPoint[] = trendRes.rows.map((r) => {

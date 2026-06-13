@@ -6,7 +6,7 @@ import { Badge, Box, H2, H4, H5, Icon, Text } from '@adminjs/design-system'
 type Tone = 'ok' | 'warn' | 'crit'
 interface Kpi { key: string; label: string; value: number; delta: number | null; href: string; icon: string; tone: Tone }
 interface QueueItem { id: string; targetType: string; targetLabel: string; reason: string; rel: string; href: string }
-interface FlaggedItem { id: string; source: string; sourceLabel: string; snippet: string; university: string | null; rel: string; href: string }
+interface FlaggedItem { id: string; source: string; sourceLabel: string; flagKind: 'user' | 'auto'; label: string | null; snippet: string; university: string | null; rel: string; href: string }
 interface TrendPoint { label: string; value: number }
 interface TopUniversity { domain: string; name: string; total: number; href: string }
 interface TopCommunity { name: string; members: number; university: string | null }
@@ -313,7 +313,11 @@ const Dashboard: React.FC = () => {
                   <a key={`${item.source}-${item.id}`} href={item.href} className="ek-link" aria-label={`${item.sourceLabel}: ${item.snippet || '(boş)'}`} style={{ textDecoration: 'none' }}>
                     <Box className="ek-row" style={{ padding: '8px 0', borderBottom: BORDER, cursor: 'pointer' }}>
                       <Box flex alignItems="center" justifyContent="space-between" style={{ gap: 8 }}>
-                        <Badge variant={item.source === 'comment' ? 'secondary' : 'primary'}>{item.sourceLabel}</Badge>
+                        <Box flex alignItems="center" style={{ gap: 6, minWidth: 0 }}>
+                          <Badge variant={item.source === 'note' ? 'success' : item.source === 'comment' ? 'secondary' : 'primary'}>{item.sourceLabel}</Badge>
+                          <Badge variant={item.flagKind === 'auto' ? 'info' : 'default'}>{item.flagKind === 'auto' ? 'Oto' : 'Şikayet'}</Badge>
+                          {item.label && <Text color="grey60" style={{ margin: 0, fontSize: 11 }}>{item.label}</Text>}
+                        </Box>
                         <Text color="grey60" style={{ margin: 0, fontSize: 12 }}>{item.rel}</Text>
                       </Box>
                       <Text
