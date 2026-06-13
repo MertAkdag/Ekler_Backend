@@ -39,7 +39,8 @@ const loc = (globalThis as { location?: { assign?: (url: string) => void; href?:
 
 const SanctionForm: React.FC<ActionProps> = ({ resource, record, action }) => {
   const sendNotice = useNotice()
-  const [sanctionType, setSanctionType] = useState<Option>(SANCTION_OPTIONS[1] as Option)
+  // Default to the least-punitive option so a careless submit can't issue a ban.
+  const [sanctionType, setSanctionType] = useState<Option>(SANCTION_OPTIONS[0] as Option)
   const [duration, setDuration] = useState<Option>(DURATION_OPTIONS[2] as Option)
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)

@@ -177,10 +177,10 @@ function contentTable(t: string | null): 'confessions' | 'confession_comments' |
 /** Re-publish a hidden confession/comment, or un-hide a note. */
 async function unhideContent(client: import('pg').PoolClient, table: string, id: string): Promise<void> {
   if (table === 'notes') {
-    await client.query('update public.notes set is_hidden = false where id = $1', [id])
+    await client.query('update public.notes set is_hidden = false, is_flagged = false where id = $1', [id])
   } else {
     await client.query(
-      `update public.${table} set moderation_status = 'published', hidden_at = null, restored_at = now() where id = $1`,
+      `update public.${table} set moderation_status = 'published', hidden_at = null, restored_at = now(), is_flagged = false where id = $1`,
       [id],
     )
   }
@@ -189,10 +189,10 @@ async function unhideContent(client: import('pg').PoolClient, table: string, id:
 /** Hide a confession/comment (with reason) or a note, by target type. */
 async function hideContent(client: import('pg').PoolClient, table: string, id: string, reason: string): Promise<void> {
   if (table === 'notes') {
-    await client.query('update public.notes set is_hidden = true where id = $1', [id])
+    await client.query('update public.notes set is_hidden = true, is_flagged = false where id = $1', [id])
   } else {
     await client.query(
-      `update public.${table} set moderation_status = 'hidden', hidden_at = now(), restored_at = null, hidden_reason = $2 where id = $1`,
+      `update public.${table} set moderation_status = 'hidden', hidden_at = now(), restored_at = null, hidden_reason = $2, is_flagged = false where id = $1`,
       [id, reason],
     )
   }
@@ -283,7 +283,7 @@ export function contentActions(table: 'confessions' | 'confession_comments'): Re
       reason: 'Yönetici içeriği gizledi.',
       mutate: async (id) =>
         void (await run(
-          `update public.${table} set moderation_status = 'hidden', hidden_at = now(), restored_at = null, hidden_reason = $2 where id = $1`,
+          `update public.${table} set moderation_status = 'hidden', hidden_at = now(), restored_at = null, hidden_reason = $2, is_flagged = false where id = $1`,
           [id, HIDE_REASON],
         )),
     }),
@@ -295,7 +295,7 @@ export function contentActions(table: 'confessions' | 'confession_comments'): Re
       action: 'publish',
       mutate: async (id) =>
         void (await run(
-          `update public.${table} set moderation_status = 'published', hidden_at = null, restored_at = now() where id = $1`,
+          `update public.${table} set moderation_status = 'published', hidden_at = null, restored_at = now(), is_flagged = false where id = $1`,
           [id],
         )),
     }),
@@ -311,7 +311,7 @@ export function noteActions(): Record<string, RecordAction> {
       entityType: 'notes',
       permissionKey: 'notes.hide',
       action: 'hide',
-      mutate: async (id) => void (await run('update public.notes set is_hidden = true where id = $1', [id])),
+      mutate: async (id) => void (await run('update public.notes set is_hidden = true, is_flagged = false where id = $1', [id])),
     }),
     publish: recordAction({
       icon: 'Eye',
@@ -319,7 +319,7 @@ export function noteActions(): Record<string, RecordAction> {
       entityType: 'notes',
       permissionKey: 'notes.publish',
       action: 'publish',
-      mutate: async (id) => void (await run('update public.notes set is_hidden = false where id = $1', [id])),
+      mutate: async (id) => void (await run('update public.notes set is_hidden = false, is_flagged = false where id = $1', [id])),
     }),
   }
 }
@@ -555,9 +555,10 @@ export function opsQueueActions(): Record<string, RecordAction> {
 }
 
 /**
- * Generic AdminJS v7 bulk action: GET renders the confirm drawer (echo records,
- * no mutation); POST runs one `update ... where id = any($1::uuid[])` for the
- * whole selection + a single summary audit row. component:false (no custom UI).
+ * Generic AdminJS v7 bulk action. With component:false AdminJS invokes the action
+ * as a SINGLE direct API call (no drawer, no separate POST step) — so the handler
+ * must mutate on that one call. It runs one `update ... where id = any($1::uuid[])`
+ * over the selection + a single summary audit row.
  */
 function bulkUpdateAction(opts: {
   icon?: string
@@ -576,16 +577,14 @@ function bulkUpdateAction(opts: {
     icon: opts.icon,
     variant: opts.variant,
     component: false,
-    showInDrawer: true,
     handler: async (
-      request: ActionRequest,
+      _request: ActionRequest,
       _response: unknown,
       context: ActionContext,
     ): Promise<BulkActionResponse> => {
       const { records, currentAdmin, h, resource } = context
       if (!records || records.length === 0) throw new Error('Kayıt seçilmedi.')
       const recordsJson = records.map((r) => r.toJSON(currentAdmin))
-      if (request.method === 'get') return { records: recordsJson }
 
       const ids = records.map((r) => String(r.id()))
       await run(opts.sql, [ids, ...(opts.params ?? [])])
@@ -618,7 +617,7 @@ export function contentBulkActions(table: 'confessions' | 'confession_comments')
       action: 'bulk_hide',
       reason: HIDE_REASON,
       sql: `update public.${table}
-              set moderation_status = 'hidden', hidden_at = now(), restored_at = null, hidden_reason = $2
+              set moderation_status = 'hidden', hidden_at = now(), restored_at = null, hidden_reason = $2, is_flagged = false
             where id = any($1::uuid[])`,
       params: [HIDE_REASON],
     }),

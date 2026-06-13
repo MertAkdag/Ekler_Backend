@@ -193,7 +193,7 @@ const SQL_KPIS = `
   )
   select
     (select count(*) from public.reports             where status = 'pending')                          as pending_reports,
-    (select count(*) from public.moderation_appeals  where status in ('pending','under_review'))         as pending_appeals,
+    (select count(*) from public.moderation_appeals  where status = 'pending')                            as pending_appeals,
     (select count(*) from public.confessions         where moderation_status = 'needs_review')
       + (select count(*) from public.confession_comments where moderation_status = 'needs_review')        as needs_review,
     (select count(*) from public.confessions         where is_flagged = true)                            as flagged_confessions,
@@ -246,7 +246,7 @@ const SQL_FLAGGED = `
            n.university_domain as university,
            'user'::text as flag_kind, null::text as label, n.created_at
     from public.notes n
-    where n.is_flagged = true or n.is_hidden = true
+    where n.is_flagged = true
   )
   order by created_at desc
   limit 10
@@ -454,8 +454,10 @@ const SANCTION_LABEL: Record<string, string> = {
 const AUDIT_ACTION_LABEL: Record<string, string> = {
   hide: 'gizledi', publish: 'yayınladı', review: 'incelendi işaretledi', dismiss: 'reddetti',
   activate: 'aktifleştirdi', deactivate: 'pasifleştirdi', approve: 'onayladı', reject: 'reddetti',
-  accept: 'kabul etti', ban: 'kalıcı yasakladı', temp_ban: 'geçici yasakladı', unban: 'yasağı kaldırdı',
-  enable: 'kuralı açtı', disable: 'kuralı kapattı',
+  accept: 'kabul etti', ban: 'kalıcı yasakladı', temp_ban: 'geçici yasakladı', permanent_ban: 'kalıcı yasakladı',
+  warning: 'uyardı', unban: 'yasağı kaldırdı', enable: 'kuralı açtı', disable: 'kuralı kapattı',
+  remove_target: 'içeriği kaldırdı', claim: 'üzerine aldı', resolve: 'çözdü',
+  bulk_hide: 'toplu gizledi', bulk_dismiss: 'toplu reddetti',
 }
 const ENTITY_LABEL: Record<string, string> = {
   confessions: 'itiraf', confession_comments: 'yorum', notes: 'not', reports: 'şikayet',
@@ -665,12 +667,13 @@ export async function dashboardHandler(
   }
 }
 
-// r.day is a pg `::date` (UTC midnight); use getUTC* so the label is the correct
-// Istanbul calendar day. Do NOT switch to local getDate/getMonth — a UTC-timezone
-// host would then render the previous day.
+// r.day is a pg bare `::date`; node-postgres parses it as LOCAL midnight (not UTC),
+// so read the LOCAL getters — getDate/getMonth return the original calendar day on
+// any host TZ. (getUTC* would shift the label back a day on a UTC-ahead host such as
+// Europe/Istanbul, which is exactly where this runs.)
 function fmtDay(day: string): string {
   const d = new Date(day)
-  const dd = String(d.getUTCDate()).padStart(2, '0')
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
   return `${dd}.${mm}`
 }
