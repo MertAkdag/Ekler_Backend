@@ -22,9 +22,23 @@ interface Payload {
 
 const api = new ApiClient()
 
+// This component bundles for the browser; the admin tsconfig has no DOM lib, so
+// reach `document` through globalThis (same pattern as hub.tsx with location).
+const doc = (globalThis as {
+  document?: {
+    visibilityState?: string
+    addEventListener?: (type: string, handler: () => void) => void
+    removeEventListener?: (type: string, handler: () => void) => void
+  }
+}).document
+const isVisible = (): boolean => (doc?.visibilityState ?? 'visible') === 'visible'
+
 // tone → design-system color token (Icon/Text) + raw hex (big number).
 const TONE_COLOR: Record<Tone, string> = { ok: 'success', warn: 'warning', crit: 'error' }
 const TONE_HEX: Record<Tone, string> = { ok: '#32A887', warn: '#E0A800', crit: '#FF4567' }
+// Non-color urgency cue so warn/crit is distinguishable without relying on color
+// alone (WCAG 1.4.1): a left accent border + an icon + a word label.
+const TONE_NOTE: Record<Tone, string | null> = { ok: null, warn: 'Dikkat', crit: 'Acil' }
 
 const CARD_STYLE: React.CSSProperties = { flex: '1 1 230px', minWidth: 200 }
 const BORDER = '1px solid #F0F0F4'
@@ -59,15 +73,33 @@ function fmtTime(iso: string): string {
 const KpiCard: React.FC<{ kpi: Kpi }> = ({ kpi }) => {
   const showDelta = kpi.delta !== null && kpi.delta !== 0
   const up = (kpi.delta ?? 0) > 0
+  const note = TONE_NOTE[kpi.tone]
   return (
-    <a href={kpi.href} style={{ textDecoration: 'none', ...CARD_STYLE }}>
-      <Box bg="white" boxShadow="card" borderRadius={12} p="lg" style={{ cursor: 'pointer', height: '100%' }}>
+    <a
+      href={kpi.href}
+      className="ek-link"
+      aria-label={`${kpi.label}: ${kpi.value}${note ? ` — ${note}` : ''}`}
+      style={{ textDecoration: 'none', ...CARD_STYLE }}
+    >
+      <Box
+        bg="white"
+        boxShadow="card"
+        borderRadius={12}
+        p="lg"
+        style={{ cursor: 'pointer', height: '100%', borderLeft: note ? `3px solid ${TONE_HEX[kpi.tone]}` : undefined }}
+      >
         <Box flex alignItems="center" justifyContent="space-between" style={{ marginBottom: 10 }}>
           <H5 style={{ margin: 0, color: '#6B6B7B' }}>{kpi.label}</H5>
           <Icon icon={kpi.icon} size={18} color={TONE_COLOR[kpi.tone]} />
         </Box>
         <Box flex alignItems="baseline" style={{ gap: 8 }}>
           <Text style={{ fontSize: 30, fontWeight: 700, lineHeight: 1.1, color: TONE_HEX[kpi.tone] }}>{kpi.value}</Text>
+          {note && (
+            <Box flex alignItems="center" style={{ gap: 2 }}>
+              <Icon icon="AlertCircle" size={12} color={TONE_COLOR[kpi.tone]} />
+              <Text style={{ margin: 0, fontSize: 11, fontWeight: 600, color: TONE_HEX[kpi.tone] }}>{note}</Text>
+            </Box>
+          )}
           {showDelta && (
             <Box flex alignItems="center" style={{ gap: 2 }}>
               <Icon icon={up ? 'TrendingUp' : 'TrendingDown'} size={14} color={up ? 'success' : 'error'} />
@@ -154,18 +186,33 @@ const Dashboard: React.FC = () => {
 
   const load = useCallback((isManual: boolean) => {
     if (isManual) setRefreshing(true)
-    setError(null)
     api
       .getDashboard({ params: { _: Date.now() } }) // cache-buster
-      .then((res) => setData(res.data as Payload))
-      .catch(() => setError('Panel verileri yüklenemedi.'))
+      // On success clear any prior error; on failure DON'T null out `data` —
+      // keep the last good values visible and surface the error as a banner.
+      .then((res) => { setData(res.data as Payload); setError(null) })
+      .catch(() => setError('error'))
       .finally(() => { if (isManual) setRefreshing(false) })
   }, [])
 
-  useEffect(() => { load(false) }, [load])
+  // Initial load + silent 30s polling so the moderation queues never go stale
+  // behind an open tab. Skip the tick when the tab is hidden (no wasted query)
+  // and refetch immediately when it becomes visible again.
+  useEffect(() => {
+    load(false)
+    const tick = (): void => { if (isVisible()) load(false) }
+    const id = setInterval(tick, 30000)
+    doc?.addEventListener?.('visibilitychange', tick)
+    return () => { clearInterval(id); doc?.removeEventListener?.('visibilitychange', tick) }
+  }, [load])
 
   return (
     <Box variant="grey" style={{ minHeight: '100%' }}>
+      {/* Keyboard focus ring + row hover — inline styles can't express :focus-visible/:hover. */}
+      <style>{`
+        .ek-link:focus-visible { outline: 2px solid #4268F6; outline-offset: 2px; border-radius: 8px; }
+        .ek-row:hover { background: #F7F7FB; }
+      `}</style>
       {/* header: greeting + last-updated + Yenile */}
       <Box bg="white" boxShadow="card" borderRadius={12} p="lg" style={{ marginBottom: 24 }}>
         <Box flex flexWrap="wrap" alignItems="center" justifyContent="space-between" style={{ gap: 12 }}>
@@ -180,27 +227,48 @@ const Dashboard: React.FC = () => {
                 <Text color="grey60" style={{ margin: 0, fontSize: 13 }}>Son güncelleme {fmtTime(data.generatedAt)}</Text>
               </Box>
             )}
-            <a
-              onClick={(e) => { e.preventDefault(); if (!refreshing) load(true) }}
-              href="#"
+            <button
+              type="button"
+              onClick={() => load(true)}
+              disabled={refreshing}
+              aria-busy={refreshing}
               style={{
-                display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none',
+                display: 'flex', alignItems: 'center', gap: 6,
                 cursor: refreshing ? 'default' : 'pointer', padding: '6px 12px',
-                border: '1px solid #E4E4EB', borderRadius: 8, opacity: refreshing ? 0.6 : 1,
+                background: 'white', border: '1px solid #E4E4EB', borderRadius: 8,
+                font: 'inherit', opacity: refreshing ? 0.6 : 1,
               }}
             >
               <Icon icon="RefreshCw" size={14} color="grey100" />
               <Text style={{ margin: 0, color: '#1C1C28' }}>{refreshing ? 'Yenileniyor' : 'Yenile'}</Text>
-            </a>
+            </button>
           </Box>
         </Box>
       </Box>
 
       {error && (
         <Box bg="white" boxShadow="card" borderRadius={12} p="lg" style={{ marginBottom: 24 }}>
-          <Box flex alignItems="center" style={{ gap: 8 }}>
-            <Icon icon="AlertTriangle" size={18} color="error" />
-            <Text style={{ margin: 0 }}>{error}</Text>
+          <Box flex flexWrap="wrap" alignItems="center" justifyContent="space-between" style={{ gap: 8 }}>
+            <Box flex alignItems="center" style={{ gap: 8 }}>
+              <Icon icon="AlertTriangle" size={18} color="error" />
+              <Text style={{ margin: 0 }}>
+                {data
+                  ? 'Yenilenemedi — gösterilen veriler güncel olmayabilir.'
+                  : 'Panel verileri yüklenemedi.'}
+              </Text>
+            </Box>
+            <button
+              type="button"
+              onClick={() => load(true)}
+              disabled={refreshing}
+              style={{
+                cursor: refreshing ? 'default' : 'pointer', padding: '6px 12px',
+                background: 'white', border: '1px solid #E4E4EB', borderRadius: 8,
+                font: 'inherit', opacity: refreshing ? 0.6 : 1,
+              }}
+            >
+              <Text style={{ margin: 0, color: '#1C1C28' }}>Tekrar dene</Text>
+            </button>
           </Box>
         </Box>
       )}
@@ -221,8 +289,8 @@ const Dashboard: React.FC = () => {
                 <EmptyState text="Bekleyen şikayet yok." />
               ) : (
                 data.reportQueue.map((item) => (
-                  <a key={item.id} href={item.href} style={{ textDecoration: 'none' }}>
-                    <Box flex alignItems="center" justifyContent="space-between" style={{ gap: 10, padding: '8px 0', borderBottom: BORDER, cursor: 'pointer' }}>
+                  <a key={item.id} href={item.href} className="ek-link" aria-label={`Şikayet: ${item.targetLabel} — ${item.reason}`} style={{ textDecoration: 'none' }}>
+                    <Box className="ek-row" flex alignItems="center" justifyContent="space-between" style={{ gap: 10, padding: '8px 0', borderBottom: BORDER, cursor: 'pointer' }}>
                       <Box flex alignItems="center" style={{ gap: 8, minWidth: 0 }}>
                         <Badge variant="primary">{item.targetLabel}</Badge>
                         <Text style={{ margin: 0, flex: '1 1 auto', minWidth: 0, color: '#1C1C28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.reason}</Text>
@@ -242,13 +310,16 @@ const Dashboard: React.FC = () => {
                 <EmptyState text="İşaretli içerik yok." />
               ) : (
                 data.flaggedContent.map((item) => (
-                  <a key={`${item.source}-${item.id}`} href={item.href} style={{ textDecoration: 'none' }}>
-                    <Box style={{ padding: '8px 0', borderBottom: BORDER, cursor: 'pointer' }}>
+                  <a key={`${item.source}-${item.id}`} href={item.href} className="ek-link" aria-label={`${item.sourceLabel}: ${item.snippet || '(boş)'}`} style={{ textDecoration: 'none' }}>
+                    <Box className="ek-row" style={{ padding: '8px 0', borderBottom: BORDER, cursor: 'pointer' }}>
                       <Box flex alignItems="center" justifyContent="space-between" style={{ gap: 8 }}>
                         <Badge variant={item.source === 'comment' ? 'secondary' : 'primary'}>{item.sourceLabel}</Badge>
                         <Text color="grey60" style={{ margin: 0, fontSize: 12 }}>{item.rel}</Text>
                       </Box>
-                      <Text style={{ margin: '6px 0 0', maxWidth: '100%', color: '#454655', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <Text
+                        title={item.snippet || ''}
+                        style={{ margin: '6px 0 0', color: '#454655', fontSize: 13, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                      >
                         {item.snippet || '(boş)'}
                       </Text>
                       {item.university && <Text color="grey60" style={{ margin: '2px 0 0', fontSize: 11 }}>{item.university}</Text>}
@@ -262,8 +333,8 @@ const Dashboard: React.FC = () => {
           {/* sparkline + top universities + top communities */}
           <Box flex flexWrap="wrap" style={{ gap: 16 }}>
             <SectionCard title="Son 14 Gün Kayıt" icon="TrendingUp" style={{ flex: '1 1 360px' }}>
-              {data.signupTrend.length === 0 ? (
-                <EmptyState text="Veri yok." />
+              {data.signupTrend.every((p) => p.value === 0) ? (
+                <EmptyState text="Son 14 günde kayıt yok." />
               ) : (
                 <>
                   <Sparkline points={data.signupTrend} />
@@ -280,8 +351,8 @@ const Dashboard: React.FC = () => {
                 <EmptyState text="Veri yok." />
               ) : (
                 data.topUniversities.map((u) => (
-                  <a key={u.domain} href={u.href} style={{ textDecoration: 'none' }}>
-                    <Box flex alignItems="center" justifyContent="space-between" style={{ gap: 8, padding: '7px 0', borderBottom: BORDER, cursor: 'pointer' }}>
+                  <a key={u.domain} href={u.href} className="ek-link" aria-label={`${u.name}: ${u.total}`} style={{ textDecoration: 'none' }}>
+                    <Box className="ek-row" flex alignItems="center" justifyContent="space-between" style={{ gap: 8, padding: '7px 0', borderBottom: BORDER, cursor: 'pointer' }}>
                       <Text style={{ margin: 0, flex: '1 1 auto', minWidth: 0, color: '#1C1C28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</Text>
                       <Badge variant="primary">{u.total}</Badge>
                     </Box>
