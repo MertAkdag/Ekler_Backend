@@ -1,12 +1,15 @@
 import type { PropertyOptions, ResourceOptions, ResourceWithOptions } from 'adminjs'
 import type { ResourceMetadata } from '@adminjs/sql'
 import {
+  appealActions,
   communityActions,
+  communityRequestActions,
   contentActions,
   eventSubmissionActions,
   noteActions,
   reportActions,
   userActions,
+  wordRuleActions,
 } from './actions.js'
 import { Components } from './components.js'
 import { signImagesAfter } from './storage.js'
@@ -36,6 +39,8 @@ interface Cfg {
   show?: string[]
   /** ordered, curated EDIT+NEW properties. MUST include every NOT-NULL-without-default column. */
   edit?: string[]
+  /** view-only: new/edit/delete/bulkDelete disabled (audit/log/derived tables). */
+  readonly?: boolean
 }
 
 /**
@@ -95,6 +100,39 @@ const RESOURCES: Cfg[] = [
     list: ['user_id', 'sanction_type', 'is_active', 'expires_at', 'created_at'],
     badges: { sanction_type: 'sanction_type', is_active: 'bool_active' },
   },
+  {
+    table: 'moderation_appeals',
+    nav: 'Moderasyon',
+    sort: { sortBy: 'created_at', direction: 'desc' },
+    list: ['appeal_type', 'related_entity_type', 'status', 'user_id', 'reviewed_by', 'created_at'],
+    badges: { status: 'appeal_status', appeal_type: 'appeal_type' },
+  },
+  {
+    table: 'ops_queue_items',
+    nav: 'Moderasyon',
+    sort: { sortBy: 'created_at', direction: 'desc' },
+    list: ['queue_domain', 'title', 'severity', 'state', 'owner_id', 'due_at', 'created_at'],
+    badges: { queue_domain: 'queue_domain', severity: 'severity', state: 'ops_state' },
+  },
+  {
+    table: 'moderation_word_rules',
+    nav: 'Moderasyon',
+    sort: { sortBy: 'rule_key', direction: 'asc' },
+    list: ['rule_key', 'scope', 'category', 'match_type', 'action', 'severity', 'enabled'],
+    badges: {
+      scope: 'rule_scope', category: 'word_category', match_type: 'match_type',
+      action: 'word_action', severity: 'severity', enabled: 'bool_enabled',
+    },
+    edit: ['rule_key', 'scope', 'category', 'match_type', 'pattern', 'action', 'severity', 'enabled', 'notes'],
+  },
+  {
+    table: 'moderation_scan_logs',
+    nav: 'Moderasyon',
+    sort: { sortBy: 'created_at', direction: 'desc' },
+    list: ['content_scope', 'decision', 'moderation_label', 'source', 'created_at'],
+    badges: { content_scope: 'scan_scope', decision: 'scan_decision' },
+    readonly: true,
+  },
   // ── İçerik ──
   {
     table: 'confessions',
@@ -139,6 +177,13 @@ const RESOURCES: Cfg[] = [
     sort: { sortBy: 'starts_at', direction: 'desc' },
     list: ['title', 'course_id', 'creator_id', 'status', 'starts_at', 'participant_count'],
     badges: { status: 'session_status' },
+  },
+  {
+    table: 'community_requests',
+    nav: 'İçerik',
+    sort: { sortBy: 'created_at', direction: 'desc' },
+    list: ['community_name', 'contact_name', 'university_domain', 'category', 'status', 'created_at'],
+    badges: { status: 'submission_status' },
   },
   // ── Etkinlikler ──
   {
@@ -256,6 +301,23 @@ const RESOURCES: Cfg[] = [
     sort: { sortBy: 'created_at', direction: 'desc' },
     list: ['email', 'display_name', 'status', 'is_super_admin', 'last_login_at'],
   },
+  {
+    table: 'push_campaigns',
+    nav: 'Sistem',
+    sort: { sortBy: 'created_at', direction: 'desc' },
+    list: ['title', 'status', 'target_platform', 'dry_run_total', 'sent_at', 'created_at'],
+    badges: { status: 'push_status', target_platform: 'target_platform' },
+    // View-only: actual sending is a worker job, not wired here — editable rows
+    // would let an admin create campaigns that never send.
+    readonly: true,
+  },
+  {
+    table: 'admin_incident_events',
+    nav: 'Sistem',
+    sort: { sortBy: 'created_at', direction: 'desc' },
+    list: ['title', 'severity', 'status', 'started_at', 'resolved_at', 'created_at'],
+    badges: { severity: 'severity', status: 'incident_status' },
+  },
 ]
 
 /** auth.users lives in the `auth` schema → separate adapter, its own config. */
@@ -279,7 +341,18 @@ const ACTIONS_BY_TABLE: Record<string, ResourceOptions['actions']> = {
   reports: reportActions(),
   communities: communityActions(),
   event_submissions: eventSubmissionActions(),
+  community_requests: communityRequestActions(),
+  moderation_appeals: appealActions(),
+  moderation_word_rules: wordRuleActions(),
   profiles: userActions(),
+}
+
+/** View-only override: disable every mutating action (merged last). */
+const READONLY_ACTIONS: ResourceOptions['actions'] = {
+  new: { isAccessible: false },
+  edit: { isAccessible: false },
+  delete: { isAccessible: false },
+  bulkDelete: { isAccessible: false },
 }
 
 /** Tables whose SHOW body is replaced by the sectioned RecordShow component. */
@@ -330,9 +403,13 @@ export function buildResources(publicDb: SqlDatabase, authDb: SqlDatabase): Reso
     // event tables define no `show` action, so a clean override suffices; cast resolves
     // the RecordActionResponse↔ActionResponse variance from spreading typed actions.
     const baseActions = ACTIONS_BY_TABLE[cfg.table]
-    const actions = (SHOW_COMPONENT_TABLES.has(cfg.table)
-      ? { ...baseActions, show: { component: Components.RecordShow, after: signImagesAfter(cfg.table) } }
-      : baseActions) as ResourceOptions['actions']
+    const actions = {
+      ...baseActions,
+      ...(SHOW_COMPONENT_TABLES.has(cfg.table)
+        ? { show: { component: Components.RecordShow, after: signImagesAfter(cfg.table) } }
+        : {}),
+      ...(cfg.readonly ? READONLY_ACTIONS : {}),
+    } as ResourceOptions['actions']
     // Only include showProperties/editProperties when actually set: AdminJS spreads
     // list-option arrays unconditionally (build-feature.js), so a present-but-undefined
     // key (`[...undefined]`) crashes boot with "is not iterable".
