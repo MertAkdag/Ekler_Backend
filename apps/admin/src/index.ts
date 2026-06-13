@@ -48,17 +48,19 @@ const ADMIN_EMAIL = requireEnv('ADMIN_EMAIL')
 const ADMIN_PASSWORD = requireEnv('ADMIN_PASSWORD')
 const COOKIE_SECRET = requireEnv('ADMIN_COOKIE_SECRET')
 const PORT = Number(process.env.ADMIN_PORT ?? 3020)
+// Supabase's default db is 'postgres'; override for self-hosted / differently-named DBs.
+const DB_NAME = process.env.ADMIN_DB_NAME ?? 'postgres'
 
 const start = async (): Promise<void> => {
   const publicDb = await new Adapter('postgresql', {
     connectionString: DATABASE_URL,
-    database: 'postgres',
+    database: DB_NAME,
   }).init()
 
   // Second adapter scoped to the `auth` schema purely to expose auth.users.
   const authDb = await new Adapter('postgresql', {
     connectionString: DATABASE_URL,
-    database: 'postgres',
+    database: DB_NAME,
     schema: 'auth',
   }).init()
 

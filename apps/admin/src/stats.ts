@@ -475,7 +475,16 @@ async function safe<T extends QueryResultRow>(label: string, sql: string): Promi
   }
 }
 
-export async function dashboardHandler(): Promise<DashboardPayload> {
+/**
+ * AdminJS calls this with (request, response, context). We ignore them today
+ * (single admin), but accept the signature so a future RBAC build can read
+ * context.currentAdmin and scope KPI queries by role without a breaking change.
+ */
+export async function dashboardHandler(
+  _request?: unknown,
+  _response?: unknown,
+  _context?: unknown,
+): Promise<DashboardPayload> {
   const [
     kpiRows, queueRows, flaggedRows, appealRows, opsRows,
     reasonRows, targetRows, sanctionRows, trendRows, activityRows,

@@ -49,15 +49,30 @@ const doc = (globalThis as {
 }).document
 const isVisible = (): boolean => (doc?.visibilityState ?? 'visible') === 'visible'
 
+// Single palette source — the @adminjs/design-system theme doesn't expose these
+// exact tokens to inline styles, so they're centralized here instead of scattered.
+const COLORS = {
+  ink: '#1C1C28',
+  body: '#454655',
+  muted: '#6B6B7B',
+  line: '#F0F0F4',
+  skel: '#EEEFF5',
+  blue: '#4268F6',
+  green: '#32A887',
+  amber: '#E0A800',
+  red: '#FF4567',
+  orange: '#FF8A4C',
+}
+
 // tone → design-system color token (Icon/Text) + raw hex (big number).
 const TONE_COLOR: Record<Tone, string> = { ok: 'success', warn: 'warning', crit: 'error' }
-const TONE_HEX: Record<Tone, string> = { ok: '#32A887', warn: '#E0A800', crit: '#FF4567' }
+const TONE_HEX: Record<Tone, string> = { ok: COLORS.green, warn: COLORS.amber, crit: COLORS.red }
 // Non-color urgency cue so warn/crit is distinguishable without relying on color
 // alone (WCAG 1.4.1): a left accent border + an icon + a word label.
 const TONE_NOTE: Record<Tone, string | null> = { ok: null, warn: 'Dikkat', crit: 'Acil' }
 
 const CARD_STYLE: React.CSSProperties = { flex: '1 1 230px', minWidth: 200 }
-const BORDER = '1px solid #F0F0F4'
+const BORDER = `1px solid ${COLORS.line}`
 
 // All wall-clock display is pinned to Europe/Istanbul so the greeting + "son
 // güncelleme" clock line up with the SQL day-boundaries (also Istanbul-anchored
@@ -105,7 +120,7 @@ const KpiCard: React.FC<{ kpi: Kpi }> = ({ kpi }) => {
         style={{ cursor: 'pointer', height: '100%', borderLeft: note ? `3px solid ${TONE_HEX[kpi.tone]}` : undefined }}
       >
         <Box flex alignItems="center" justifyContent="space-between" style={{ marginBottom: 10 }}>
-          <H5 style={{ margin: 0, color: '#6B6B7B' }}>{kpi.label}</H5>
+          <H5 style={{ margin: 0, color: COLORS.muted }}>{kpi.label}</H5>
           <Icon icon={kpi.icon} size={18} color={TONE_COLOR[kpi.tone]} />
         </Box>
         <Box flex alignItems="baseline" style={{ gap: 8 }}>
@@ -119,7 +134,7 @@ const KpiCard: React.FC<{ kpi: Kpi }> = ({ kpi }) => {
           {showDelta && (
             <Box flex alignItems="center" style={{ gap: 2 }}>
               <Icon icon={up ? 'TrendingUp' : 'TrendingDown'} size={14} color={up ? 'success' : 'error'} />
-              <Text style={{ margin: 0, fontSize: 13, color: up ? '#32A887' : '#FF4567' }}>
+              <Text style={{ margin: 0, fontSize: 13, color: up ? COLORS.green : COLORS.red }}>
                 {up ? '+' : ''}{kpi.delta}
               </Text>
             </Box>
@@ -140,7 +155,7 @@ const Sparkline: React.FC<{ points: TrendPoint[] }> = ({ points }) => {
         return (
           <Box
             key={`${p.label}-${i}`}
-            style={{ flexGrow: 1, height: h, backgroundColor: '#4268F6', borderRadius: 2, minWidth: 4, opacity: 0.85 }}
+            style={{ flexGrow: 1, height: h, backgroundColor: COLORS.blue, borderRadius: 2, minWidth: 4, opacity: 0.85 }}
           />
         )
       })}
@@ -169,7 +184,7 @@ const EmptyState: React.FC<{ text: string }> = ({ text }) => (
 )
 
 // P0/P1 = red, P2 = amber, P3 = grey.
-const SEV_HEX: Record<string, string> = { P0: '#FF4567', P1: '#FF4567', P2: '#E0A800', P3: '#6B6B7B' }
+const SEV_HEX: Record<string, string> = { P0: COLORS.red, P1: COLORS.red, P2: COLORS.amber, P3: COLORS.muted }
 const SEV_VARIANT: Record<string, 'danger' | 'secondary' | 'default'> = { P0: 'danger', P1: 'danger', P2: 'secondary', P3: 'default' }
 
 // ---- horizontal proportional bar (breakdowns) ---------------------------
@@ -178,11 +193,11 @@ const BarRow: React.FC<{ row: BreakdownRow; max: number; color?: string }> = ({ 
   const inner = (
     <Box style={{ padding: '6px 0' }}>
       <Box flex alignItems="center" justifyContent="space-between" style={{ gap: 8, marginBottom: 4 }}>
-        <Text style={{ margin: 0, color: '#454655', fontSize: 13, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.label}</Text>
-        <Text style={{ margin: 0, color: '#1C1C28', fontSize: 13, fontWeight: 600 }}>{row.count}</Text>
+        <Text style={{ margin: 0, color: COLORS.body, fontSize: 13, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.label}</Text>
+        <Text style={{ margin: 0, color: COLORS.ink, fontSize: 13, fontWeight: 600 }}>{row.count}</Text>
       </Box>
-      <Box style={{ height: 6, borderRadius: 3, backgroundColor: '#EEEFF5' }}>
-        <Box style={{ width: `${pct}%`, height: 6, borderRadius: 3, backgroundColor: color ?? '#4268F6' }} />
+      <Box style={{ height: 6, borderRadius: 3, backgroundColor: COLORS.skel }}>
+        <Box style={{ width: `${pct}%`, height: 6, borderRadius: 3, backgroundColor: color ?? COLORS.blue }} />
       </Box>
     </Box>
   )
@@ -198,8 +213,8 @@ const DualSpark: React.FC<{ points: ActivityPoint[] }> = ({ points }) => {
     <Box flex alignItems="flex-end" justifyContent="space-between" style={{ gap: 4, height: 56 }}>
       {points.map((p, i) => (
         <Box key={`${p.label}-${i}`} flex alignItems="flex-end" style={{ flexGrow: 1, gap: 1, height: '100%' }}>
-          <Box style={{ flex: 1, height: Math.max(2, Math.round((p.content / max) * 50)), backgroundColor: '#4268F6', borderRadius: 2, opacity: 0.85 }} />
-          <Box style={{ flex: 1, height: Math.max(2, Math.round((p.reports / max) * 50)), backgroundColor: '#FF4567', borderRadius: 2, opacity: 0.85 }} />
+          <Box style={{ flex: 1, height: Math.max(2, Math.round((p.content / max) * 50)), backgroundColor: COLORS.blue, borderRadius: 2, opacity: 0.85 }} />
+          <Box style={{ flex: 1, height: Math.max(2, Math.round((p.reports / max) * 50)), backgroundColor: COLORS.red, borderRadius: 2, opacity: 0.85 }} />
         </Box>
       ))}
     </Box>
@@ -208,7 +223,7 @@ const DualSpark: React.FC<{ points: ActivityPoint[] }> = ({ points }) => {
 
 // ---- Box-based loading skeleton (no extra imports) ----------------------
 const SkelBar: React.FC<{ w: number | string; h: number; mt?: number }> = ({ w, h, mt }) => (
-  <Box style={{ width: w, height: h, marginTop: mt ?? 0, backgroundColor: '#EEEFF5', borderRadius: 4 }} />
+  <Box style={{ width: w, height: h, marginTop: mt ?? 0, backgroundColor: COLORS.skel, borderRadius: 4 }} />
 )
 
 const Skeleton: React.FC = () => (
@@ -294,7 +309,7 @@ const Dashboard: React.FC = () => {
               }}
             >
               <Icon icon="RefreshCw" size={14} color="grey100" />
-              <Text style={{ margin: 0, color: '#1C1C28' }}>{refreshing ? 'Yenileniyor' : 'Yenile'}</Text>
+              <Text style={{ margin: 0, color: COLORS.ink }}>{refreshing ? 'Yenileniyor' : 'Yenile'}</Text>
             </button>
           </Box>
         </Box>
@@ -321,7 +336,7 @@ const Dashboard: React.FC = () => {
                 font: 'inherit', opacity: refreshing ? 0.6 : 1,
               }}
             >
-              <Text style={{ margin: 0, color: '#1C1C28' }}>Tekrar dene</Text>
+              <Text style={{ margin: 0, color: COLORS.ink }}>Tekrar dene</Text>
             </button>
           </Box>
         </Box>
@@ -347,7 +362,7 @@ const Dashboard: React.FC = () => {
                     <Box className="ek-row" flex alignItems="center" justifyContent="space-between" style={{ gap: 10, padding: '8px 0', borderBottom: BORDER, cursor: 'pointer' }}>
                       <Box flex alignItems="center" style={{ gap: 8, minWidth: 0 }}>
                         <Badge variant="primary">{item.targetLabel}</Badge>
-                        <Text style={{ margin: 0, flex: '1 1 auto', minWidth: 0, color: '#1C1C28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.reason}</Text>
+                        <Text style={{ margin: 0, flex: '1 1 auto', minWidth: 0, color: COLORS.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.reason}</Text>
                       </Box>
                       <Box flex alignItems="center" style={{ gap: 8, flexShrink: 0 }}>
                         <Text color="grey60" style={{ margin: 0, fontSize: 12 }}>{item.rel}</Text>
@@ -376,7 +391,7 @@ const Dashboard: React.FC = () => {
                       </Box>
                       <Text
                         title={item.snippet || ''}
-                        style={{ margin: '6px 0 0', color: '#454655', fontSize: 13, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                        style={{ margin: '6px 0 0', color: COLORS.body, fontSize: 13, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
                       >
                         {item.snippet || '(boş)'}
                       </Text>
@@ -399,7 +414,7 @@ const Dashboard: React.FC = () => {
                     <Box className="ek-row" flex alignItems="center" justifyContent="space-between" style={{ gap: 10, padding: '8px 0', borderBottom: BORDER, cursor: 'pointer' }}>
                       <Box flex alignItems="center" style={{ gap: 8, minWidth: 0 }}>
                         <Badge variant="secondary">{item.typeLabel}</Badge>
-                        <Text style={{ margin: 0, flex: '1 1 auto', minWidth: 0, color: '#1C1C28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.reason}</Text>
+                        <Text style={{ margin: 0, flex: '1 1 auto', minWidth: 0, color: COLORS.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.reason}</Text>
                       </Box>
                       <Box flex alignItems="center" style={{ gap: 8, flexShrink: 0 }}>
                         <Text color="grey60" style={{ margin: 0, fontSize: 12 }}>{item.rel}</Text>
@@ -420,12 +435,12 @@ const Dashboard: React.FC = () => {
                     <Box className="ek-row" flex alignItems="center" justifyContent="space-between" style={{ gap: 10, padding: '8px 0', borderBottom: BORDER, cursor: 'pointer' }}>
                       <Box flex alignItems="center" style={{ gap: 8, minWidth: 0 }}>
                         <Badge variant={SEV_VARIANT[item.severity] ?? 'default'}>{item.severity}</Badge>
-                        <Text style={{ margin: 0, flex: '1 1 auto', minWidth: 0, color: '#1C1C28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</Text>
+                        <Text style={{ margin: 0, flex: '1 1 auto', minWidth: 0, color: COLORS.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</Text>
                       </Box>
                       <Box flex alignItems="center" style={{ gap: 8, flexShrink: 0 }}>
                         {!item.owned && <Badge variant="default">Atanmamış</Badge>}
                         {item.due && (
-                          <Text style={{ margin: 0, fontSize: 12, color: item.due.overdue ? '#FF4567' : '#6B6B7B' }}>{item.due.text}</Text>
+                          <Text style={{ margin: 0, fontSize: 12, color: item.due.overdue ? COLORS.red : COLORS.muted }}>{item.due.text}</Text>
                         )}
                         <Icon icon="ChevronRight" size={16} color="grey40" />
                       </Box>
@@ -449,13 +464,13 @@ const Dashboard: React.FC = () => {
                         t.href ? (
                           <a key={t.key} href={t.href} className="ek-link" style={{ textDecoration: 'none' }}>
                             <Box flex alignItems="center" style={{ gap: 6, padding: '4px 8px', border: BORDER, borderRadius: 8 }}>
-                              <Text style={{ margin: 0, color: '#1C1C28', fontSize: 12 }}>{t.label}</Text>
+                              <Text style={{ margin: 0, color: COLORS.ink, fontSize: 12 }}>{t.label}</Text>
                               <Badge variant="primary">{t.count}</Badge>
                             </Box>
                           </a>
                         ) : (
                           <Box key={t.key} flex alignItems="center" style={{ gap: 6, padding: '4px 8px', border: BORDER, borderRadius: 8 }}>
-                            <Text style={{ margin: 0, color: '#1C1C28', fontSize: 12 }}>{t.label}</Text>
+                            <Text style={{ margin: 0, color: COLORS.ink, fontSize: 12 }}>{t.label}</Text>
                             <Badge variant="primary">{t.count}</Badge>
                           </Box>
                         )
@@ -503,7 +518,7 @@ const Dashboard: React.FC = () => {
                 data.topUniversities.map((u) => (
                   <a key={u.domain} href={u.href} className="ek-link" aria-label={`${u.name}: ${u.total}`} style={{ textDecoration: 'none' }}>
                     <Box className="ek-row" flex alignItems="center" justifyContent="space-between" style={{ gap: 8, padding: '7px 0', borderBottom: BORDER, cursor: 'pointer' }}>
-                      <Text style={{ margin: 0, flex: '1 1 auto', minWidth: 0, color: '#1C1C28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</Text>
+                      <Text style={{ margin: 0, flex: '1 1 auto', minWidth: 0, color: COLORS.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</Text>
                       <Badge variant="primary">{u.total}</Badge>
                     </Box>
                   </a>
@@ -518,7 +533,7 @@ const Dashboard: React.FC = () => {
                 data.topCommunities.map((c, i) => (
                   <Box key={`${c.name}-${i}`} flex alignItems="center" justifyContent="space-between" style={{ gap: 8, padding: '7px 0', borderBottom: BORDER }}>
                     <Box style={{ minWidth: 0 }}>
-                      <Text style={{ margin: 0, color: '#1C1C28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</Text>
+                      <Text style={{ margin: 0, color: COLORS.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</Text>
                       {c.university && <Text color="grey60" style={{ margin: 0, fontSize: 11 }}>{c.university}</Text>}
                     </Box>
                     <Box flex alignItems="center" style={{ gap: 4, flexShrink: 0 }}>
@@ -541,11 +556,11 @@ const Dashboard: React.FC = () => {
                   <DualSpark points={data.activityTrend} />
                   <Box flex alignItems="center" style={{ gap: 14, marginTop: 8 }}>
                     <Box flex alignItems="center" style={{ gap: 4 }}>
-                      <Box style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#4268F6' }} />
+                      <Box style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: COLORS.blue }} />
                       <Text color="grey60" style={{ margin: 0, fontSize: 11 }}>İçerik</Text>
                     </Box>
                     <Box flex alignItems="center" style={{ gap: 4 }}>
-                      <Box style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#FF4567' }} />
+                      <Box style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: COLORS.red }} />
                       <Text color="grey60" style={{ margin: 0, fontSize: 11 }}>Şikayet</Text>
                     </Box>
                   </Box>
@@ -560,7 +575,7 @@ const Dashboard: React.FC = () => {
                 data.riskyUsers.map((u) => (
                   <a key={u.id} href={u.href} className="ek-link" aria-label={`${u.username}: ${u.count} şikayet`} style={{ textDecoration: 'none' }}>
                     <Box className="ek-row" flex alignItems="center" justifyContent="space-between" style={{ gap: 8, padding: '7px 0', borderBottom: BORDER, cursor: 'pointer' }}>
-                      <Text style={{ margin: 0, flex: '1 1 auto', minWidth: 0, color: '#1C1C28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.username}</Text>
+                      <Text style={{ margin: 0, flex: '1 1 auto', minWidth: 0, color: COLORS.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.username}</Text>
                       <Badge variant="danger">{u.count}</Badge>
                     </Box>
                   </a>
@@ -579,26 +594,26 @@ const Dashboard: React.FC = () => {
                   <Box flex flexWrap="wrap" style={{ gap: 20, marginBottom: 12 }}>
                     <Box>
                       <Text color="grey60" style={{ margin: 0, fontSize: 12 }}>Blok Oranı</Text>
-                      <Text style={{ margin: 0, fontSize: 24, fontWeight: 700, color: data.scanSummary.blockRate >= 20 ? '#FF4567' : '#1C1C28' }}>%{data.scanSummary.blockRate}</Text>
+                      <Text style={{ margin: 0, fontSize: 24, fontWeight: 700, color: data.scanSummary.blockRate >= 20 ? COLORS.red : COLORS.ink }}>%{data.scanSummary.blockRate}</Text>
                     </Box>
                     <Box>
                       <Text color="grey60" style={{ margin: 0, fontSize: 12 }}>İzin</Text>
-                      <Text style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#32A887' }}>{data.scanSummary.allow}</Text>
+                      <Text style={{ margin: 0, fontSize: 24, fontWeight: 700, color: COLORS.green }}>{data.scanSummary.allow}</Text>
                     </Box>
                     <Box>
                       <Text color="grey60" style={{ margin: 0, fontSize: 12 }}>İncele</Text>
-                      <Text style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#E0A800' }}>{data.scanSummary.review}</Text>
+                      <Text style={{ margin: 0, fontSize: 24, fontWeight: 700, color: COLORS.amber }}>{data.scanSummary.review}</Text>
                     </Box>
                     <Box>
                       <Text color="grey60" style={{ margin: 0, fontSize: 12 }}>Blok</Text>
-                      <Text style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#FF4567' }}>{data.scanSummary.block}</Text>
+                      <Text style={{ margin: 0, fontSize: 24, fontWeight: 700, color: COLORS.red }}>{data.scanSummary.block}</Text>
                     </Box>
                   </Box>
                   {data.scanSummary.topTerms.length > 0 && (
                     <Box flex flexWrap="wrap" style={{ gap: 6 }}>
                       {data.scanSummary.topTerms.map((t) => (
                         <Box key={t.term} flex alignItems="center" style={{ gap: 6, padding: '4px 8px', border: BORDER, borderRadius: 8 }}>
-                          <Text style={{ margin: 0, color: '#454655', fontSize: 12 }}>{t.term}</Text>
+                          <Text style={{ margin: 0, color: COLORS.body, fontSize: 12 }}>{t.term}</Text>
                           <Badge variant="default">{t.count}</Badge>
                         </Box>
                       ))}
@@ -614,8 +629,8 @@ const Dashboard: React.FC = () => {
               ) : (
                 data.recentActions.map((a, i) => (
                   <Box key={i} flex alignItems="center" justifyContent="space-between" style={{ gap: 8, padding: '7px 0', borderBottom: BORDER }}>
-                    <Text style={{ margin: 0, minWidth: 0, color: '#454655', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      <b style={{ color: '#1C1C28' }}>{a.actor}</b> {a.entityLabel} {a.actionLabel}
+                    <Text style={{ margin: 0, minWidth: 0, color: COLORS.body, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <b style={{ color: COLORS.ink }}>{a.actor}</b> {a.entityLabel} {a.actionLabel}
                     </Text>
                     <Text color="grey60" style={{ margin: 0, fontSize: 12, flexShrink: 0 }}>{a.rel}</Text>
                   </Box>
