@@ -7,16 +7,32 @@ type Tone = 'ok' | 'warn' | 'crit'
 interface Kpi { key: string; label: string; value: number; delta: number | null; href: string; icon: string; tone: Tone }
 interface QueueItem { id: string; targetType: string; targetLabel: string; reason: string; rel: string; href: string }
 interface FlaggedItem { id: string; source: string; sourceLabel: string; flagKind: 'user' | 'auto'; label: string | null; snippet: string; university: string | null; rel: string; href: string }
+interface AppealItem { id: string; typeLabel: string; reason: string; rel: string; href: string }
+interface OpsItem { id: string; domainLabel: string; title: string; severity: string; state: string; owned: boolean; due: { text: string; overdue: boolean } | null; rel: string; href: string }
+interface BreakdownRow { key: string; label: string; count: number; href: string | null }
+interface RiskyUser { id: string; username: string; count: number; href: string }
 interface TrendPoint { label: string; value: number }
+interface ActivityPoint { label: string; content: number; reports: number }
+interface ScanSummary { allow: number; review: number; block: number; blockRate: number; topTerms: { term: string; count: number }[] }
+interface AuditItem { actor: string; actionLabel: string; entityLabel: string; reason: string | null; rel: string }
 interface TopUniversity { domain: string; name: string; total: number; href: string }
 interface TopCommunity { name: string; members: number; university: string | null }
 interface Payload {
   kpis: Kpi[]
   reportQueue: QueueItem[]
   flaggedContent: FlaggedItem[]
+  appealQueue: AppealItem[]
+  opsQueue: OpsItem[]
+  reportsByReason: BreakdownRow[]
+  reportsByTarget: BreakdownRow[]
+  activeSanctions: BreakdownRow[]
   signupTrend: TrendPoint[]
+  activityTrend: ActivityPoint[]
   topUniversities: TopUniversity[]
   topCommunities: TopCommunity[]
+  riskyUsers: RiskyUser[]
+  scanSummary: ScanSummary
+  recentActions: AuditItem[]
   generatedAt: string
 }
 
@@ -151,6 +167,44 @@ const EmptyState: React.FC<{ text: string }> = ({ text }) => (
     <Text color="grey60" style={{ marginTop: 8 }}>{text}</Text>
   </Box>
 )
+
+// P0/P1 = red, P2 = amber, P3 = grey.
+const SEV_HEX: Record<string, string> = { P0: '#FF4567', P1: '#FF4567', P2: '#E0A800', P3: '#6B6B7B' }
+const SEV_VARIANT: Record<string, 'danger' | 'secondary' | 'default'> = { P0: 'danger', P1: 'danger', P2: 'secondary', P3: 'default' }
+
+// ---- horizontal proportional bar (breakdowns) ---------------------------
+const BarRow: React.FC<{ row: BreakdownRow; max: number; color?: string }> = ({ row, max, color }) => {
+  const pct = max > 0 ? Math.max(4, Math.round((row.count / max) * 100)) : 0
+  const inner = (
+    <Box style={{ padding: '6px 0' }}>
+      <Box flex alignItems="center" justifyContent="space-between" style={{ gap: 8, marginBottom: 4 }}>
+        <Text style={{ margin: 0, color: '#454655', fontSize: 13, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.label}</Text>
+        <Text style={{ margin: 0, color: '#1C1C28', fontSize: 13, fontWeight: 600 }}>{row.count}</Text>
+      </Box>
+      <Box style={{ height: 6, borderRadius: 3, backgroundColor: '#EEEFF5' }}>
+        <Box style={{ width: `${pct}%`, height: 6, borderRadius: 3, backgroundColor: color ?? '#4268F6' }} />
+      </Box>
+    </Box>
+  )
+  return row.href
+    ? <a href={row.href} className="ek-link" style={{ textDecoration: 'none', display: 'block' }}>{inner}</a>
+    : inner
+}
+
+// ---- two-series mini bars (content vs reports) --------------------------
+const DualSpark: React.FC<{ points: ActivityPoint[] }> = ({ points }) => {
+  const max = points.length ? Math.max(1, ...points.map((p) => Math.max(p.content, p.reports))) : 1
+  return (
+    <Box flex alignItems="flex-end" justifyContent="space-between" style={{ gap: 4, height: 56 }}>
+      {points.map((p, i) => (
+        <Box key={`${p.label}-${i}`} flex alignItems="flex-end" style={{ flexGrow: 1, gap: 1, height: '100%' }}>
+          <Box style={{ flex: 1, height: Math.max(2, Math.round((p.content / max) * 50)), backgroundColor: '#4268F6', borderRadius: 2, opacity: 0.85 }} />
+          <Box style={{ flex: 1, height: Math.max(2, Math.round((p.reports / max) * 50)), backgroundColor: '#FF4567', borderRadius: 2, opacity: 0.85 }} />
+        </Box>
+      ))}
+    </Box>
+  )
+}
 
 // ---- Box-based loading skeleton (no extra imports) ----------------------
 const SkelBar: React.FC<{ w: number | string; h: number; mt?: number }> = ({ w, h, mt }) => (
@@ -334,6 +388,98 @@ const Dashboard: React.FC = () => {
             </SectionCard>
           </Box>
 
+          {/* appeal queue + ops queue */}
+          <Box flex flexWrap="wrap" style={{ gap: 16, marginBottom: 24 }}>
+            <SectionCard title="İtiraz Kuyruğu" icon="Inbox">
+              {data.appealQueue.length === 0 ? (
+                <EmptyState text="Bekleyen itiraz yok." />
+              ) : (
+                data.appealQueue.map((item) => (
+                  <a key={item.id} href={item.href} className="ek-link" aria-label={`İtiraz: ${item.typeLabel} — ${item.reason}`} style={{ textDecoration: 'none' }}>
+                    <Box className="ek-row" flex alignItems="center" justifyContent="space-between" style={{ gap: 10, padding: '8px 0', borderBottom: BORDER, cursor: 'pointer' }}>
+                      <Box flex alignItems="center" style={{ gap: 8, minWidth: 0 }}>
+                        <Badge variant="secondary">{item.typeLabel}</Badge>
+                        <Text style={{ margin: 0, flex: '1 1 auto', minWidth: 0, color: '#1C1C28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.reason}</Text>
+                      </Box>
+                      <Box flex alignItems="center" style={{ gap: 8, flexShrink: 0 }}>
+                        <Text color="grey60" style={{ margin: 0, fontSize: 12 }}>{item.rel}</Text>
+                        <Icon icon="ChevronRight" size={16} color="grey40" />
+                      </Box>
+                    </Box>
+                  </a>
+                ))
+              )}
+            </SectionCard>
+
+            <SectionCard title="İş Kuyruğu (Ops)" icon="List">
+              {data.opsQueue.length === 0 ? (
+                <EmptyState text="Açık iş yok." />
+              ) : (
+                data.opsQueue.map((item) => (
+                  <a key={item.id} href={item.href} className="ek-link" aria-label={`${item.domainLabel}: ${item.title}`} style={{ textDecoration: 'none' }}>
+                    <Box className="ek-row" flex alignItems="center" justifyContent="space-between" style={{ gap: 10, padding: '8px 0', borderBottom: BORDER, cursor: 'pointer' }}>
+                      <Box flex alignItems="center" style={{ gap: 8, minWidth: 0 }}>
+                        <Badge variant={SEV_VARIANT[item.severity] ?? 'default'}>{item.severity}</Badge>
+                        <Text style={{ margin: 0, flex: '1 1 auto', minWidth: 0, color: '#1C1C28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</Text>
+                      </Box>
+                      <Box flex alignItems="center" style={{ gap: 8, flexShrink: 0 }}>
+                        {!item.owned && <Badge variant="default">Atanmamış</Badge>}
+                        {item.due && (
+                          <Text style={{ margin: 0, fontSize: 12, color: item.due.overdue ? '#FF4567' : '#6B6B7B' }}>{item.due.text}</Text>
+                        )}
+                        <Icon icon="ChevronRight" size={16} color="grey40" />
+                      </Box>
+                    </Box>
+                  </a>
+                ))
+              )}
+            </SectionCard>
+          </Box>
+
+          {/* reports breakdown + active sanctions */}
+          <Box flex flexWrap="wrap" style={{ gap: 16, marginBottom: 24 }}>
+            <SectionCard title="Şikayet Dağılımı" icon="PieChart">
+              {data.reportsByReason.length === 0 && data.reportsByTarget.length === 0 ? (
+                <EmptyState text="Açık şikayet yok." />
+              ) : (
+                <>
+                  {data.reportsByTarget.length > 0 && (
+                    <Box flex flexWrap="wrap" style={{ gap: 6, marginBottom: 12 }}>
+                      {data.reportsByTarget.map((t) => (
+                        t.href ? (
+                          <a key={t.key} href={t.href} className="ek-link" style={{ textDecoration: 'none' }}>
+                            <Box flex alignItems="center" style={{ gap: 6, padding: '4px 8px', border: BORDER, borderRadius: 8 }}>
+                              <Text style={{ margin: 0, color: '#1C1C28', fontSize: 12 }}>{t.label}</Text>
+                              <Badge variant="primary">{t.count}</Badge>
+                            </Box>
+                          </a>
+                        ) : (
+                          <Box key={t.key} flex alignItems="center" style={{ gap: 6, padding: '4px 8px', border: BORDER, borderRadius: 8 }}>
+                            <Text style={{ margin: 0, color: '#1C1C28', fontSize: 12 }}>{t.label}</Text>
+                            <Badge variant="primary">{t.count}</Badge>
+                          </Box>
+                        )
+                      ))}
+                    </Box>
+                  )}
+                  {data.reportsByReason.map((r) => (
+                    <BarRow key={r.key} row={r} max={data.reportsByReason[0]?.count ?? 0} color="#FF8A4C" />
+                  ))}
+                </>
+              )}
+            </SectionCard>
+
+            <SectionCard title="Aktif Yaptırımlar" icon="Slash" style={{ flex: '1 1 300px', minWidth: 260 }}>
+              {data.activeSanctions.length === 0 ? (
+                <EmptyState text="Aktif yaptırım yok." />
+              ) : (
+                data.activeSanctions.map((s) => (
+                  <BarRow key={s.key} row={s} max={data.activeSanctions[0]?.count ?? 0} color="#FF4567" />
+                ))
+              )}
+            </SectionCard>
+          </Box>
+
           {/* sparkline + top universities + top communities */}
           <Box flex flexWrap="wrap" style={{ gap: 16 }}>
             <SectionCard title="Son 14 Gün Kayıt" icon="TrendingUp" style={{ flex: '1 1 360px' }}>
@@ -379,6 +525,99 @@ const Dashboard: React.FC = () => {
                       <Icon icon="Users" size={13} color="grey60" />
                       <Text color="grey60" style={{ margin: 0, fontSize: 13 }}>{c.members}</Text>
                     </Box>
+                  </Box>
+                ))
+              )}
+            </SectionCard>
+          </Box>
+
+          {/* activity trend + risky users */}
+          <Box flex flexWrap="wrap" style={{ gap: 16, marginTop: 24 }}>
+            <SectionCard title="İçerik & Şikayet (14g)" icon="BarChart2" style={{ flex: '1 1 360px' }}>
+              {data.activityTrend.every((p) => p.content === 0 && p.reports === 0) ? (
+                <EmptyState text="Son 14 günde aktivite yok." />
+              ) : (
+                <>
+                  <DualSpark points={data.activityTrend} />
+                  <Box flex alignItems="center" style={{ gap: 14, marginTop: 8 }}>
+                    <Box flex alignItems="center" style={{ gap: 4 }}>
+                      <Box style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#4268F6' }} />
+                      <Text color="grey60" style={{ margin: 0, fontSize: 11 }}>İçerik</Text>
+                    </Box>
+                    <Box flex alignItems="center" style={{ gap: 4 }}>
+                      <Box style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#FF4567' }} />
+                      <Text color="grey60" style={{ margin: 0, fontSize: 11 }}>Şikayet</Text>
+                    </Box>
+                  </Box>
+                </>
+              )}
+            </SectionCard>
+
+            <SectionCard title="Riskli Kullanıcılar" icon="UserX" style={{ flex: '1 1 300px', minWidth: 260 }}>
+              {data.riskyUsers.length === 0 ? (
+                <EmptyState text="Açık şikayeti olan kullanıcı yok." />
+              ) : (
+                data.riskyUsers.map((u) => (
+                  <a key={u.id} href={u.href} className="ek-link" aria-label={`${u.username}: ${u.count} şikayet`} style={{ textDecoration: 'none' }}>
+                    <Box className="ek-row" flex alignItems="center" justifyContent="space-between" style={{ gap: 8, padding: '7px 0', borderBottom: BORDER, cursor: 'pointer' }}>
+                      <Text style={{ margin: 0, flex: '1 1 auto', minWidth: 0, color: '#1C1C28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.username}</Text>
+                      <Badge variant="danger">{u.count}</Badge>
+                    </Box>
+                  </a>
+                ))
+              )}
+            </SectionCard>
+          </Box>
+
+          {/* auto-moderation health + recent admin actions */}
+          <Box flex flexWrap="wrap" style={{ gap: 16, marginTop: 24 }}>
+            <SectionCard title="Oto-Moderasyon (bugün)" icon="Shield" style={{ flex: '1 1 360px' }}>
+              {(data.scanSummary.allow + data.scanSummary.review + data.scanSummary.block) === 0 ? (
+                <EmptyState text="Bugün tarama kaydı yok." />
+              ) : (
+                <>
+                  <Box flex flexWrap="wrap" style={{ gap: 20, marginBottom: 12 }}>
+                    <Box>
+                      <Text color="grey60" style={{ margin: 0, fontSize: 12 }}>Blok Oranı</Text>
+                      <Text style={{ margin: 0, fontSize: 24, fontWeight: 700, color: data.scanSummary.blockRate >= 20 ? '#FF4567' : '#1C1C28' }}>%{data.scanSummary.blockRate}</Text>
+                    </Box>
+                    <Box>
+                      <Text color="grey60" style={{ margin: 0, fontSize: 12 }}>İzin</Text>
+                      <Text style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#32A887' }}>{data.scanSummary.allow}</Text>
+                    </Box>
+                    <Box>
+                      <Text color="grey60" style={{ margin: 0, fontSize: 12 }}>İncele</Text>
+                      <Text style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#E0A800' }}>{data.scanSummary.review}</Text>
+                    </Box>
+                    <Box>
+                      <Text color="grey60" style={{ margin: 0, fontSize: 12 }}>Blok</Text>
+                      <Text style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#FF4567' }}>{data.scanSummary.block}</Text>
+                    </Box>
+                  </Box>
+                  {data.scanSummary.topTerms.length > 0 && (
+                    <Box flex flexWrap="wrap" style={{ gap: 6 }}>
+                      {data.scanSummary.topTerms.map((t) => (
+                        <Box key={t.term} flex alignItems="center" style={{ gap: 6, padding: '4px 8px', border: BORDER, borderRadius: 8 }}>
+                          <Text style={{ margin: 0, color: '#454655', fontSize: 12 }}>{t.term}</Text>
+                          <Badge variant="default">{t.count}</Badge>
+                        </Box>
+                      ))}
+                    </Box>
+                  )}
+                </>
+              )}
+            </SectionCard>
+
+            <SectionCard title="Son Yönetici Aksiyonları" icon="Activity" style={{ flex: '1 1 360px' }}>
+              {data.recentActions.length === 0 ? (
+                <EmptyState text="Kayıtlı aksiyon yok." />
+              ) : (
+                data.recentActions.map((a, i) => (
+                  <Box key={i} flex alignItems="center" justifyContent="space-between" style={{ gap: 8, padding: '7px 0', borderBottom: BORDER }}>
+                    <Text style={{ margin: 0, minWidth: 0, color: '#454655', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <b style={{ color: '#1C1C28' }}>{a.actor}</b> {a.entityLabel} {a.actionLabel}
+                    </Text>
+                    <Text color="grey60" style={{ margin: 0, fontSize: 12, flexShrink: 0 }}>{a.rel}</Text>
                   </Box>
                 ))
               )}
