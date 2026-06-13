@@ -14,6 +14,7 @@ export const TR_TRANSLATIONS = {
     publish: 'Yayınla',
     review: 'İncelendi',
     dismiss: 'Reddet',
+    removeTarget: 'İçeriği Kaldır + Kapat',
     activate: 'Aktifleştir',
     deactivate: 'Pasifleştir',
     approve: 'Onayla',

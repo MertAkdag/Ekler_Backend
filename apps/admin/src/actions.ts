@@ -125,6 +125,115 @@ async function replaceActiveSanction(
   }
 }
 
+const HIDE_REASON = 'Yönetici tarafından gizlendi.'
+const REPORT_REMOVE_REASON = 'Şikayet üzerine kaldırıldı.'
+
+/** related_entity_type / report target_type → the table holding that content. */
+function contentTable(t: string | null): 'confessions' | 'confession_comments' | 'notes' | null {
+  if (!t) return null
+  const s = t.toLowerCase()
+  if (s.includes('comment')) return 'confession_comments'
+  if (s.includes('confession')) return 'confessions'
+  if (s.includes('note')) return 'notes'
+  return null
+}
+
+/** Re-publish a hidden confession/comment, or un-hide a note. */
+async function unhideContent(client: import('pg').PoolClient, table: string, id: string): Promise<void> {
+  if (table === 'notes') {
+    await client.query('update public.notes set is_hidden = false where id = $1', [id])
+  } else {
+    await client.query(
+      `update public.${table} set moderation_status = 'published', hidden_at = null, restored_at = now() where id = $1`,
+      [id],
+    )
+  }
+}
+
+/** Hide a confession/comment (with reason) or a note, by target type. */
+async function hideContent(client: import('pg').PoolClient, table: string, id: string, reason: string): Promise<void> {
+  if (table === 'notes') {
+    await client.query('update public.notes set is_hidden = true where id = $1', [id])
+  } else {
+    await client.query(
+      `update public.${table} set moderation_status = 'hidden', hidden_at = now(), restored_at = null, hidden_reason = $2 where id = $1`,
+      [id, reason],
+    )
+  }
+}
+
+/**
+ * Accept an appeal AND act on what it contests (the whole point — a bare status
+ * flip leaves the user still banned / content still hidden):
+ *  - content_removal → re-publish the related content
+ *  - sanction / account_ban → deactivate the sanction (by id, else the user's active one)
+ * Then mark the appeal accepted. All in one transaction.
+ */
+async function acceptAppeal(id: string): Promise<void> {
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    const { rows } = await client.query(
+      `select appeal_type, related_entity_type, related_entity_id, sanction_id, user_id
+       from public.moderation_appeals where id = $1 for update`,
+      [id],
+    )
+    const a = rows[0]
+    if (a) {
+      if (a.appeal_type === 'content_removal' && a.related_entity_id) {
+        const t = contentTable(a.related_entity_type)
+        if (t) await unhideContent(client, t, a.related_entity_id)
+      } else if (a.appeal_type === 'sanction' || a.appeal_type === 'account_ban') {
+        if (a.sanction_id) {
+          await client.query('update public.user_sanctions set is_active = false where id = $1', [a.sanction_id])
+        } else if (a.user_id) {
+          await client.query(
+            'update public.user_sanctions set is_active = false where user_id = $1 and is_active = true',
+            [a.user_id],
+          )
+        }
+      }
+    }
+    await client.query(
+      "update public.moderation_appeals set status = 'accepted', reviewed_at = now(), updated_at = now() where id = $1",
+      [id],
+    )
+    await client.query('commit')
+  } catch (err) {
+    await client.query('rollback')
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
+/**
+ * Resolve a report AND act on its target in one step: hide the reported content
+ * (confession/comment/note) then mark the report reviewed. User-target reports
+ * have no content to hide, so they are just marked reviewed (ban the user from
+ * the Profiles screen). One transaction.
+ */
+async function removeReportTarget(id: string): Promise<void> {
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    const { rows } = await client.query(
+      'select target_type, target_id from public.reports where id = $1 for update',
+      [id],
+    )
+    const r = rows[0]
+    const t = contentTable(r?.target_type ?? null)
+    if (r && t && r.target_id) await hideContent(client, t, r.target_id, REPORT_REMOVE_REASON)
+    await client.query("update public.reports set status = 'reviewed', updated_at = now() where id = $1", [id])
+    await client.query('commit')
+  } catch (err) {
+    await client.query('rollback')
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
 /** confessions + confession_comments share the moderation_status / hidden_at columns. */
 export function contentActions(table: 'confessions' | 'confession_comments'): Record<string, RecordAction> {
   return {
@@ -138,8 +247,8 @@ export function contentActions(table: 'confessions' | 'confession_comments'): Re
       reason: 'Yönetici içeriği gizledi.',
       mutate: async (id) =>
         void (await run(
-          `update public.${table} set moderation_status = 'hidden', hidden_at = now(), restored_at = null where id = $1`,
-          [id],
+          `update public.${table} set moderation_status = 'hidden', hidden_at = now(), restored_at = null, hidden_reason = $2 where id = $1`,
+          [id, HIDE_REASON],
         )),
     }),
     publish: recordAction({
@@ -181,6 +290,16 @@ export function noteActions(): Record<string, RecordAction> {
 
 export function reportActions(): Record<string, RecordAction> {
   return {
+    removeTarget: recordAction({
+      icon: 'Trash2',
+      guard: 'Şikayet edilen içeriği kaldırıp şikayeti kapatmak istediğine emin misin?',
+      successMessage: 'İçerik kaldırıldı ve şikayet kapatıldı.',
+      entityType: 'reports',
+      permissionKey: 'reports.remove_target',
+      action: 'remove_target',
+      reason: REPORT_REMOVE_REASON,
+      mutate: removeReportTarget,
+    }),
     review: recordAction({
       icon: 'CheckCircle',
       successMessage: 'Şikayet incelendi olarak işaretlendi.',
@@ -280,16 +399,12 @@ export function appealActions(): Record<string, RecordAction> {
   return {
     accept: recordAction({
       icon: 'Check',
-      guard: 'İtirazı kabul etmek istediğine emin misin?',
-      successMessage: 'İtiraz kabul edildi.',
+      guard: 'İtirazı kabul edip ilgili yaptırımı/içeriği geri almak istediğine emin misin?',
+      successMessage: 'İtiraz kabul edildi; ilgili yaptırım/içerik geri alındı.',
       entityType: 'moderation_appeals',
       permissionKey: 'moderation_appeals.accept',
       action: 'accept',
-      mutate: async (id) =>
-        void (await run(
-          "update public.moderation_appeals set status = 'accepted', reviewed_at = now(), updated_at = now() where id = $1",
-          [id],
-        )),
+      mutate: acceptAppeal,
     }),
     rejectAppeal: recordAction({
       icon: 'X',
