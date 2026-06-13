@@ -2,6 +2,7 @@ import type {
   Action,
   ActionContext,
   ActionRequest,
+  BulkActionResponse,
   RecordActionResponse,
 } from 'adminjs'
 import { pool } from './db.js'
@@ -22,6 +23,7 @@ import { Components } from './components.js'
 
 type Mutator = (id: string) => Promise<void>
 type RecordAction = Partial<Action<RecordActionResponse>>
+type BulkAction = Partial<Action<BulkActionResponse>>
 
 const run = (sql: string, params: unknown[]): Promise<unknown> => pool.query(sql, params)
 
@@ -510,6 +512,130 @@ function clampDays(raw: unknown): number {
   const days = Math.floor(Number(raw))
   if (!Number.isFinite(days) || days < 1) return 7
   return Math.min(days, 3650)
+}
+
+/**
+ * ops_queue_items is machine-populated; the panel only drives state transitions:
+ * open → in_progress (claim) → resolved | dismissed. owner_id is a uuid FK and
+ * there is no admin uuid in the single-env panel, so `claim` only flips state
+ * (never writes owner_id). All three route through recordAction → audit-logged.
+ */
+export function opsQueueActions(): Record<string, RecordAction> {
+  return {
+    claim: recordAction({
+      icon: 'UserCheck',
+      successMessage: 'İş üzerine alındı.',
+      entityType: 'ops_queue_items',
+      permissionKey: 'ops_queue.claim',
+      action: 'claim',
+      mutate: async (id) =>
+        void (await run("update public.ops_queue_items set state = 'in_progress', updated_at = now() where id = $1", [id])),
+    }),
+    resolve: recordAction({
+      icon: 'CheckCircle',
+      successMessage: 'İş çözüldü olarak kapatıldı.',
+      entityType: 'ops_queue_items',
+      permissionKey: 'ops_queue.resolve',
+      action: 'resolve',
+      mutate: async (id) =>
+        void (await run("update public.ops_queue_items set state = 'resolved', resolved_at = now(), updated_at = now() where id = $1", [id])),
+    }),
+    dismiss: recordAction({
+      icon: 'XCircle',
+      guard: 'Bu iş kaydını kapatmak istediğine emin misin?',
+      successMessage: 'İş kaydı kapatıldı.',
+      entityType: 'ops_queue_items',
+      permissionKey: 'ops_queue.dismiss',
+      action: 'dismiss',
+      mutate: async (id) =>
+        void (await run("update public.ops_queue_items set state = 'dismissed', updated_at = now() where id = $1", [id])),
+    }),
+  }
+}
+
+/**
+ * Generic AdminJS v7 bulk action: GET renders the confirm drawer (echo records,
+ * no mutation); POST runs one `update ... where id = any($1::uuid[])` for the
+ * whole selection + a single summary audit row. component:false (no custom UI).
+ */
+function bulkUpdateAction(opts: {
+  icon?: string
+  variant?: 'primary' | 'danger' | 'success'
+  noticeFor: (count: number) => string
+  entityType: string
+  permissionKey: string
+  action: string
+  reason: string
+  sql: string
+}): BulkAction {
+  return {
+    actionType: 'bulk',
+    icon: opts.icon,
+    variant: opts.variant,
+    component: false,
+    showInDrawer: true,
+    handler: async (
+      request: ActionRequest,
+      _response: unknown,
+      context: ActionContext,
+    ): Promise<BulkActionResponse> => {
+      const { records, currentAdmin, h, resource } = context
+      if (!records || records.length === 0) throw new Error('Kayıt seçilmedi.')
+      const recordsJson = records.map((r) => r.toJSON(currentAdmin))
+      if (request.method === 'get') return { records: recordsJson }
+
+      const ids = records.map((r) => String(r.id()))
+      await run(opts.sql, [ids])
+      await writeAudit({
+        actorEmail: adminEmail(currentAdmin),
+        permissionKey: opts.permissionKey,
+        entityType: opts.entityType,
+        entityId: ids.join(','),
+        action: opts.action,
+        reason: `${opts.reason} (${ids.length} kayıt)`,
+      })
+      return {
+        records: recordsJson,
+        notice: { message: opts.noticeFor(ids.length), type: 'success' },
+        redirectUrl: h.resourceUrl({ resourceId: resource.id() }),
+      }
+    },
+  }
+}
+
+/** Bulk-hide for confessions / confession_comments (shared moderation columns). */
+export function contentBulkActions(table: 'confessions' | 'confession_comments'): Record<string, BulkAction> {
+  return {
+    bulkHide: bulkUpdateAction({
+      icon: 'EyeOff',
+      variant: 'danger',
+      noticeFor: (count) => `${count} içerik gizlendi.`,
+      entityType: table,
+      permissionKey: `${table}.bulk_hide`,
+      action: 'bulk_hide',
+      reason: HIDE_REASON,
+      sql: `update public.${table}
+              set moderation_status = 'hidden', hidden_at = now(), restored_at = null, hidden_reason = '${HIDE_REASON}'
+            where id = any($1::uuid[])`,
+    }),
+  }
+}
+
+/** Bulk-dismiss for reports. */
+export function reportBulkActions(): Record<string, BulkAction> {
+  return {
+    bulkDismiss: bulkUpdateAction({
+      icon: 'XCircle',
+      noticeFor: (count) => `${count} şikayet reddedildi.`,
+      entityType: 'reports',
+      permissionKey: 'reports.bulk_dismiss',
+      action: 'bulk_dismiss',
+      reason: 'Toplu reddedildi.',
+      sql: `update public.reports
+              set status = 'dismissed', updated_at = now()
+            where id = any($1::uuid[])`,
+    }),
+  }
 }
 
 /**

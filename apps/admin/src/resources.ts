@@ -5,9 +5,12 @@ import {
   communityActions,
   communityRequestActions,
   contentActions,
+  contentBulkActions,
   eventSubmissionActions,
   noteActions,
+  opsQueueActions,
   reportActions,
+  reportBulkActions,
   userActions,
   wordRuleActions,
   wordRuleNormalizeBefore,
@@ -114,6 +117,8 @@ const RESOURCES: Cfg[] = [
     sort: { sortBy: 'created_at', direction: 'desc' },
     list: ['queue_domain', 'title', 'severity', 'state', 'owner_id', 'due_at', 'created_at'],
     badges: { queue_domain: 'queue_domain', severity: 'severity', state: 'ops_state' },
+    // Machine-populated queue; only state transitions allowed (claim/resolve/dismiss).
+    readonly: true,
   },
   {
     table: 'moderation_word_rules',
@@ -337,10 +342,10 @@ interface SqlDatabase {
 
 /** Moderation actions per table (merged with AdminJS default actions). */
 const ACTIONS_BY_TABLE: Record<string, ResourceOptions['actions']> = {
-  confessions: contentActions('confessions'),
-  confession_comments: contentActions('confession_comments'),
+  confessions: { ...contentActions('confessions'), ...contentBulkActions('confessions') },
+  confession_comments: { ...contentActions('confession_comments'), ...contentBulkActions('confession_comments') },
   notes: noteActions(),
-  reports: reportActions(),
+  reports: { ...reportActions(), ...reportBulkActions() },
   communities: communityActions(),
   event_submissions: eventSubmissionActions(),
   community_requests: communityRequestActions(),
@@ -352,6 +357,7 @@ const ACTIONS_BY_TABLE: Record<string, ResourceOptions['actions']> = {
     new: { before: wordRuleNormalizeBefore },
     edit: { before: wordRuleNormalizeBefore },
   },
+  ops_queue_items: opsQueueActions(),
   profiles: userActions(),
 }
 
