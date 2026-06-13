@@ -183,8 +183,7 @@ const EmptyState: React.FC<{ text: string }> = ({ text }) => (
   </Box>
 )
 
-// P0/P1 = red, P2 = amber, P3 = grey.
-const SEV_HEX: Record<string, string> = { P0: COLORS.red, P1: COLORS.red, P2: COLORS.amber, P3: COLORS.muted }
+// P0/P1 = red, P2 = amber, P3 = grey (badge variant for ops-queue severity).
 const SEV_VARIANT: Record<string, 'danger' | 'secondary' | 'default'> = { P0: 'danger', P1: 'danger', P2: 'secondary', P3: 'default' }
 
 // ---- horizontal proportional bar (breakdowns) ---------------------------
@@ -478,7 +477,7 @@ const Dashboard: React.FC = () => {
                     </Box>
                   )}
                   {data.reportsByReason.map((r) => (
-                    <BarRow key={r.key} row={r} max={data.reportsByReason[0]?.count ?? 0} color="#FF8A4C" />
+                    <BarRow key={r.key} row={r} max={data.reportsByReason[0]?.count ?? 0} color={COLORS.orange} />
                   ))}
                 </>
               )}
@@ -489,7 +488,7 @@ const Dashboard: React.FC = () => {
                 <EmptyState text="Aktif yaptırım yok." />
               ) : (
                 data.activeSanctions.map((s) => (
-                  <BarRow key={s.key} row={s} max={data.activeSanctions[0]?.count ?? 0} color="#FF4567" />
+                  <BarRow key={s.key} row={s} max={data.activeSanctions[0]?.count ?? 0} color={COLORS.red} />
                 ))
               )}
             </SectionCard>

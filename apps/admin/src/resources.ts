@@ -326,7 +326,8 @@ const AUTH_USERS: Cfg = {
   nav: 'Kullanıcılar',
   schema: 'auth',
   sort: { sortBy: 'created_at', direction: 'desc' },
-  list: ['email', 'phone', 'email_confirmed_at', 'last_sign_in_at', 'banned_until', 'created_at'],
+  // standalone shell auth.users has no last_sign_in_at; updated_at is the closest signal.
+  list: ['email', 'phone', 'email_confirmed_at', 'updated_at', 'banned_until', 'created_at'],
 }
 
 interface SqlDatabase {
