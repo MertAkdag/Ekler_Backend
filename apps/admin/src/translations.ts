@@ -23,8 +23,7 @@ export const TR_TRANSLATIONS = {
     rejectAppeal: 'İtirazı Reddet',
     enableRule: 'Aktifleştir',
     disableRule: 'Devre Dışı Bırak',
-    ban: 'Kalıcı Yasakla',
-    tempBan: 'Geçici Yasakla (7g)',
+    sanction: 'Yaptırım Uygula',
     unban: 'Yasağı Kaldır',
   },
   buttons: {
@@ -213,6 +212,7 @@ export const TR_TRANSLATIONS = {
     review_notes: 'İnceleme Notları',
     submission_notes: 'Başvuru Notları',
     sanction_type: 'Yaptırım Türü',
+    duration_days: 'Süre (gün)',
     normalized_body: 'Normalize İçerik',
     // appeals
     appeal_type: 'İtiraz Türü',

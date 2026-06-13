@@ -9,4 +9,5 @@ export const Components = {
   Thumbnail: componentLoader.add('Thumbnail', './components/thumbnail'),
   Hub: componentLoader.add('Hub', './components/hub'),
   RecordShow: componentLoader.add('RecordShow', './components/record-show'),
+  SanctionForm: componentLoader.add('SanctionForm', './components/sanction-form'),
 }

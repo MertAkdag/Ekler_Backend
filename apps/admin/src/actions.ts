@@ -5,6 +5,7 @@ import type {
   RecordActionResponse,
 } from 'adminjs'
 import { pool } from './db.js'
+import { Components } from './components.js'
 
 /**
  * Moderation record-actions. Each runs an explicit parameterized write against the
@@ -51,6 +52,38 @@ async function writeAudit(entry: AuditEntry): Promise<void> {
 
 function adminEmail(currentAdmin: ActionContext['currentAdmin']): string | null {
   return currentAdmin && typeof currentAdmin.email === 'string' ? currentAdmin.email : null
+}
+
+/**
+ * Notification `type` values that should_deliver_notification (02-schema.sql:2091)
+ * treats as auto-critical → always delivered, bypassing user_settings. notifications
+ * has NO table-level type CHECK, so these are the app's contract, not a DB constraint.
+ */
+type NotificationType = 'moderation_warning' | 'moderation_restriction' | 'security_system'
+
+/**
+ * Insert a user-facing notification. The admin pool is DB owner/superuser, so RLS
+ * (notifications_insert_own) is not enforced — a direct insert with an arbitrary
+ * recipient_id is allowed. Best-effort: a failed notify must never roll back a
+ * committed sanction. Moderation types are auto-critical, so no should_deliver gate.
+ */
+async function notify(opts: {
+  recipientId: string
+  type: NotificationType
+  title: string
+  body: string
+  data?: Record<string, unknown>
+}): Promise<void> {
+  try {
+    await run(
+      `insert into public.notifications (recipient_id, type, title, body, data)
+       values ($1, $2, $3, $4, $5)`,
+      [opts.recipientId, opts.type, opts.title, opts.body, opts.data ? JSON.stringify(opts.data) : null],
+    )
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('user notification insert failed:', err)
+  }
 }
 
 function recordAction(opts: {
@@ -100,7 +133,7 @@ function recordAction(opts: {
 /** Deactivate any active sanction, then add a fresh one (preserves the single-active unique index). */
 async function replaceActiveSanction(
   userId: string,
-  type: 'temp_ban' | 'permanent_ban',
+  type: 'warning' | 'temp_ban' | 'permanent_ban',
   reason: string,
   expiresAtSql: string | null,
 ): Promise<void> {
@@ -470,45 +503,118 @@ export function wordRuleActions(): Record<string, RecordAction> {
   }
 }
 
+const DEFAULT_SANCTION_REASON = 'Topluluk kurallarına aykırı davranış.'
+
+/** Clamp a free-text duration_days payload to a sane integer (1..3650). */
+function clampDays(raw: unknown): number {
+  const days = Math.floor(Number(raw))
+  if (!Number.isFinite(days) || days < 1) return 7
+  return Math.min(days, 3650)
+}
+
 /**
  * User moderation goes through user_sanctions (the source of truth) — the
  * sync_user_banned_status trigger derives profiles.is_banned / is_restricted /
  * restriction_ends_at from it. A profiles record's id() IS the user_id.
+ *
+ * `sanction` is parameterized: its custom component (SanctionForm) POSTs
+ * { sanction_type, duration_days, reason }; the handler validates them, applies
+ * the sanction via replaceActiveSanction, writes an audit row, and notifies the
+ * user. `unban` stays one-click and also notifies (restriction lifted).
  */
 export function userActions(): Record<string, RecordAction> {
   return {
-    ban: recordAction({
-      icon: 'Slash',
-      guard: 'Bu kullanıcıyı KALICI yasaklamak istediğine emin misin?',
-      successMessage: 'Kullanıcı kalıcı olarak yasaklandı.',
-      entityType: 'profiles',
-      permissionKey: 'users.ban',
-      action: 'ban',
-      reason: 'Yönetici tarafından kalıcı yasaklandı.',
-      mutate: (id) => replaceActiveSanction(id, 'permanent_ban', 'Yönetici tarafından yasaklandı.', null),
-    }),
-    tempBan: recordAction({
-      icon: 'Clock',
-      guard: '7 günlük geçici yasak uygulansın mı?',
-      successMessage: 'Kullanıcı 7 gün geçici yasaklandı.',
-      entityType: 'profiles',
-      permissionKey: 'users.temp_ban',
-      action: 'temp_ban',
-      reason: 'Yönetici tarafından 7 gün geçici yasaklandı.',
-      mutate: (id) =>
-        replaceActiveSanction(id, 'temp_ban', 'Yönetici tarafından geçici yasaklandı.', "now() + interval '7 days'"),
-    }),
+    sanction: {
+      actionType: 'record',
+      icon: 'AlertTriangle',
+      component: Components.SanctionForm,
+      handler: async (request, _response, context) => {
+        const { record, currentAdmin } = context
+        if (!record) throw new Error('Kayıt bulunamadı.')
+        const userId = String(record.id())
+
+        // GET (initial render) → hand the record to the component, no mutation.
+        if (request.method !== 'post') {
+          return { record: record.toJSON(currentAdmin) }
+        }
+
+        const payload = request.payload ?? {}
+        const rawType = String(payload.sanction_type ?? '')
+        if (rawType !== 'warning' && rawType !== 'temp_ban' && rawType !== 'permanent_ban') {
+          throw new Error('Geçersiz yaptırım türü.')
+        }
+        const sanctionType = rawType as 'warning' | 'temp_ban' | 'permanent_ban'
+        const reason = String(payload.reason ?? '').trim() || DEFAULT_SANCTION_REASON
+
+        let expiresAtSql: string | null = null
+        let days: number | null = null
+        if (sanctionType === 'temp_ban') {
+          days = clampDays(payload.duration_days)
+          expiresAtSql = `now() + interval '${days} days'`
+        }
+
+        await replaceActiveSanction(userId, sanctionType, reason, expiresAtSql)
+
+        if (sanctionType === 'warning') {
+          await notify({
+            recipientId: userId,
+            type: 'moderation_warning',
+            title: 'Uyarı aldınız',
+            body: reason,
+            data: { sanction_type: sanctionType },
+          })
+        } else {
+          await notify({
+            recipientId: userId,
+            type: 'moderation_restriction',
+            title: sanctionType === 'permanent_ban' ? 'Hesabınız kalıcı olarak kısıtlandı' : 'Hesabınız geçici olarak kısıtlandı',
+            body:
+              sanctionType === 'permanent_ban'
+                ? `${reason} Bu karar kalıcıdır; itiraz edebilirsiniz.`
+                : `${reason} Kısıtlama ${days} gün sürecektir; itiraz edebilirsiniz.`,
+            data: { sanction_type: sanctionType, duration_days: days },
+          })
+        }
+
+        await writeAudit({
+          actorEmail: adminEmail(currentAdmin),
+          permissionKey: 'users.sanction',
+          entityType: 'profiles',
+          entityId: userId,
+          action: sanctionType,
+          reason,
+        })
+
+        const labelTr =
+          sanctionType === 'warning' ? 'Uyarı verildi.'
+            : sanctionType === 'permanent_ban' ? 'Kullanıcı kalıcı olarak yasaklandı.'
+              : `Kullanıcı ${days} gün geçici yasaklandı.`
+
+        return {
+          record: record.toJSON(currentAdmin),
+          notice: { message: labelTr, type: 'success' },
+        }
+      },
+    },
     unban: recordAction({
       icon: 'Check',
       successMessage: 'Kullanıcının yasağı kaldırıldı.',
       entityType: 'profiles',
       permissionKey: 'users.unban',
       action: 'unban',
-      mutate: async (id) =>
-        void (await run(
+      mutate: async (id) => {
+        await run(
           'update public.user_sanctions set is_active = false where user_id = $1 and is_active = true',
           [id],
-        )),
+        )
+        await notify({
+          recipientId: id,
+          type: 'moderation_restriction',
+          title: 'Kısıtlamanız kaldırıldı',
+          body: 'Hesabınızdaki yaptırım kaldırıldı. Topluluk kurallarına uymaya devam edin.',
+          data: { event: 'restriction_lifted' },
+        })
+      },
     }),
   }
 }
