@@ -137,7 +137,7 @@ async function replaceActiveSanction(
   userId: string,
   type: 'warning' | 'temp_ban' | 'permanent_ban',
   reason: string,
-  expiresAtSql: string | null,
+  expiresInDays: number | null,
 ): Promise<void> {
   const client = await pool.connect()
   try {
@@ -148,8 +148,9 @@ async function replaceActiveSanction(
     )
     await client.query(
       `insert into public.user_sanctions (user_id, sanction_type, reason, is_active, expires_at)
-       values ($1, $2, $3, true, ${expiresAtSql ?? 'null'})`,
-      [userId, type, reason],
+       values ($1, $2, $3, true,
+         case when $4::int is null then null else now() + make_interval(days => $4::int) end)`,
+      [userId, type, reason, expiresInDays],
     )
     await client.query('commit')
   } catch (err) {
@@ -566,7 +567,9 @@ function bulkUpdateAction(opts: {
   permissionKey: string
   action: string
   reason: string
+  /** SQL with $1 = uuid[] of selected ids; any extra placeholders ($2…) bind to `params`. */
   sql: string
+  params?: unknown[]
 }): BulkAction {
   return {
     actionType: 'bulk',
@@ -585,7 +588,7 @@ function bulkUpdateAction(opts: {
       if (request.method === 'get') return { records: recordsJson }
 
       const ids = records.map((r) => String(r.id()))
-      await run(opts.sql, [ids])
+      await run(opts.sql, [ids, ...(opts.params ?? [])])
       await writeAudit({
         actorEmail: adminEmail(currentAdmin),
         permissionKey: opts.permissionKey,
@@ -615,8 +618,9 @@ export function contentBulkActions(table: 'confessions' | 'confession_comments')
       action: 'bulk_hide',
       reason: HIDE_REASON,
       sql: `update public.${table}
-              set moderation_status = 'hidden', hidden_at = now(), restored_at = null, hidden_reason = '${HIDE_REASON}'
+              set moderation_status = 'hidden', hidden_at = now(), restored_at = null, hidden_reason = $2
             where id = any($1::uuid[])`,
+      params: [HIDE_REASON],
     }),
   }
 }
@@ -672,14 +676,12 @@ export function userActions(): Record<string, RecordAction> {
         const sanctionType = rawType as 'warning' | 'temp_ban' | 'permanent_ban'
         const reason = String(payload.reason ?? '').trim() || DEFAULT_SANCTION_REASON
 
-        let expiresAtSql: string | null = null
         let days: number | null = null
         if (sanctionType === 'temp_ban') {
           days = clampDays(payload.duration_days)
-          expiresAtSql = `now() + interval '${days} days'`
         }
 
-        await replaceActiveSanction(userId, sanctionType, reason, expiresAtSql)
+        await replaceActiveSanction(userId, sanctionType, reason, days)
 
         if (sanctionType === 'warning') {
           await notify({
