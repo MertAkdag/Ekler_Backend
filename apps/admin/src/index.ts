@@ -31,12 +31,22 @@ import {
  */
 AdminJS.registerAdapter({ Database, Resource })
 
-const DATABASE_URL = process.env.DATABASE_URL
-if (!DATABASE_URL) throw new Error('DATABASE_URL is required (see apps/admin/.env)')
+/**
+ * Required secret — throws if unset OR empty. No fallback defaults: a baked-in
+ * password / cookie secret would let the panel boot with a publicly-known
+ * credential and a forgeable session-signing key (auth bypass). Set these in
+ * apps/admin/.env (gitignored); cookie secret should be ≥32 random bytes.
+ */
+function requireEnv(name: string): string {
+  const v = process.env[name]
+  if (!v) throw new Error(`${name} is required (see apps/admin/.env)`)
+  return v
+}
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@ekler.app'
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'ekler-admin'
-const COOKIE_SECRET = process.env.ADMIN_COOKIE_SECRET ?? 'dev-cookie-secret-change-me'
+const DATABASE_URL = requireEnv('DATABASE_URL')
+const ADMIN_EMAIL = requireEnv('ADMIN_EMAIL')
+const ADMIN_PASSWORD = requireEnv('ADMIN_PASSWORD')
+const COOKIE_SECRET = requireEnv('ADMIN_COOKIE_SECRET')
 const PORT = Number(process.env.ADMIN_PORT ?? 3020)
 
 const start = async (): Promise<void> => {
