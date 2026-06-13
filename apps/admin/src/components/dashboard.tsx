@@ -29,8 +29,20 @@ const TONE_HEX: Record<Tone, string> = { ok: '#32A887', warn: '#E0A800', crit: '
 const CARD_STYLE: React.CSSProperties = { flex: '1 1 230px', minWidth: 200 }
 const BORDER = '1px solid #F0F0F4'
 
+// All wall-clock display is pinned to Europe/Istanbul so the greeting + "son
+// güncelleme" clock line up with the SQL day-boundaries (also Istanbul-anchored
+// in stats.ts). A moderator on a non-TR browser would otherwise see a clock and
+// salutation that contradict the Istanbul-based "bugün" KPI counts.
+const TZ = 'Europe/Istanbul'
+
+function istanbulHour(d: Date): number {
+  return Number(
+    new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hourCycle: 'h23', timeZone: TZ }).format(d),
+  )
+}
+
 function greeting(): string {
-  const h = new Date().getHours()
+  const h = istanbulHour(new Date())
   if (h < 6) return 'İyi geceler'
   if (h < 12) return 'Günaydın'
   if (h < 18) return 'İyi günler'
@@ -38,8 +50,9 @@ function greeting(): string {
 }
 
 function fmtTime(iso: string): string {
-  const d = new Date(iso)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return new Intl.DateTimeFormat('tr-TR', {
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: TZ,
+  }).format(new Date(iso))
 }
 
 // ---- KPI card -----------------------------------------------------------
