@@ -124,7 +124,7 @@ OTP ile giriş e-posta gönderir. [resend.com](https://resend.com):
 RN repo'da (`ekler/.env`):
 ```
 EXPO_PUBLIC_API_URL=https://api.ekler.app/v1
-EXPO_PUBLIC_AUTH_BACKEND=node
+EXPO_PUBLIC_AUTH_BACKEND=own   # DEĞER 'own' (lib/authBackend.ts === 'own' bekliyor)
 EXPO_PUBLIC_API_STORAGE=1
 # ... mevcut tüm EXPO_PUBLIC_API_* zaten =1
 ```
