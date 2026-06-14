@@ -6,6 +6,7 @@ import {
   communityRequestActions,
   contentActions,
   contentBulkActions,
+  courseSuggestionActions,
   eventSubmissionActions,
   noteActions,
   opsQueueActions,
@@ -79,6 +80,7 @@ const READONLY = new Set([
   'like_count',
   'comment_count',
   'member_count',
+  'endorsement_count',
   'follower_count',
   'participant_count',
   'download_count',
@@ -283,6 +285,14 @@ const RESOURCES: Cfg[] = [
     list: ['code', 'name', 'faculty', 'university_domain', 'credits'],
   },
   {
+    table: 'course_suggestions',
+    nav: 'Katalog',
+    // Most-endorsed pending suggestions first (the ones worth approving).
+    sort: { sortBy: 'endorsement_count', direction: 'desc' },
+    list: ['code', 'name', 'department_id', 'university_domain', 'endorsement_count', 'status', 'created_at'],
+    badges: { status: 'submission_status' },
+  },
+  {
     table: 'faculties',
     nav: 'Katalog',
     sort: { sortBy: 'name', direction: 'asc' },
@@ -347,6 +357,7 @@ const ACTIONS_BY_TABLE: Record<string, ResourceOptions['actions']> = {
   notes: noteActions(),
   reports: { ...reportActions(), ...reportBulkActions() },
   communities: communityActions(),
+  course_suggestions: courseSuggestionActions(),
   event_submissions: eventSubmissionActions(),
   community_requests: communityRequestActions(),
   moderation_appeals: appealActions(),
