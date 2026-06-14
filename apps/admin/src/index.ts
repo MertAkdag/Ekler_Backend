@@ -138,6 +138,9 @@ const start = async (): Promise<void> => {
   // etmez; branding/assets'teki /public/* yolları buradan karşılanır.
   const __dirname = path.dirname(fileURLToPath(import.meta.url))
   app.use('/public', express.static(path.join(__dirname, '../public')))
+  // Kök '/' istekleri panele yönlensin; aksi halde Express "Cannot GET /" döner
+  // (AdminJS yalnızca rootPath '/admin' altına mount ediliyor).
+  app.get('/', (_req, res) => res.redirect(admin.options.rootPath))
   app.use(admin.options.rootPath, router)
   app.listen(PORT, () => {
     // eslint-disable-next-line no-console
