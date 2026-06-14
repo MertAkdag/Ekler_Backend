@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod'
 import {
+  createAppealBodySchema,
   deviceTokenBodySchema,
   enrollCoursesBodySchema,
   grantConsentsBodySchema,
@@ -8,6 +9,7 @@ import {
   updateProfileBodySchema,
   updateSettingsBodySchema,
   usernameAvailableQuerySchema,
+  visibleUsersQuerySchema,
 } from '@ekler/contracts'
 
 export class UpdateProfileBodyDto extends createZodDto(updateProfileBodySchema) {}
@@ -18,3 +20,5 @@ export class PresenceBodyDto extends createZodDto(presenceBodySchema) {}
 export class DeviceTokenBodyDto extends createZodDto(deviceTokenBodySchema) {}
 export class GrantConsentsBodyDto extends createZodDto(grantConsentsBodySchema) {}
 export class SisterUniversitiesBodyDto extends createZodDto(sisterUniversitiesBodySchema) {}
+export class CreateAppealBodyDto extends createZodDto(createAppealBodySchema) {}
+export class VisibleUsersQueryDto extends createZodDto(visibleUsersQuerySchema) {}

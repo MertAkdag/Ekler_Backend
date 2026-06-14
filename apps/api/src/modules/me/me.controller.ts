@@ -1,16 +1,21 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common'
 import type {
+  Appeal,
+  AppNotification,
   Consent,
   ProfileDetail,
   RequiredConsents,
+  Sanction,
   UserCourse,
   UserSettings,
   UserStats,
+  VisibleUser,
 } from '@ekler/contracts'
 import { CurrentUser } from '../../core/auth/public.decorator'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 import { MeService } from './me.service'
 import {
+  CreateAppealBodyDto,
   DeviceTokenBodyDto,
   EnrollCoursesBodyDto,
   GrantConsentsBodyDto,
@@ -19,6 +24,7 @@ import {
   UpdateProfileBodyDto,
   UpdateSettingsBodyDto,
   UsernameAvailableQueryDto,
+  VisibleUsersQueryDto,
 } from './me.dto'
 
 @Controller('me')
@@ -147,5 +153,70 @@ export class MeController {
     @Body() body: SisterUniversitiesBodyDto,
   ): Promise<void> {
     return this.me.replaceSisterUniversities(body.domains, user)
+  }
+
+  // ── Notifications inbox (Wave E) ─────────────────────────────────────────
+  @Get('notifications')
+  notifications(@CurrentUser() user: AuthPrincipal): Promise<AppNotification[]> {
+    return this.me.notifications(user)
+  }
+
+  @Patch('notifications')
+  @HttpCode(204)
+  markAllNotificationsRead(@CurrentUser() user: AuthPrincipal): Promise<void> {
+    return this.me.markAllNotificationsRead(user)
+  }
+
+  @Patch('notifications/:id')
+  @HttpCode(204)
+  markNotificationRead(
+    @CurrentUser() user: AuthPrincipal,
+    @Param('id') id: string,
+  ): Promise<void> {
+    return this.me.markNotificationRead(id, user)
+  }
+
+  @Delete('notifications')
+  @HttpCode(204)
+  clearNotifications(@CurrentUser() user: AuthPrincipal): Promise<void> {
+    return this.me.clearNotifications(user)
+  }
+
+  @Delete('notifications/:id')
+  @HttpCode(204)
+  deleteNotification(@CurrentUser() user: AuthPrincipal, @Param('id') id: string): Promise<void> {
+    return this.me.deleteNotification(id, user)
+  }
+
+  // ── Sanctions + appeals (Wave E) ─────────────────────────────────────────
+  @Get('sanctions')
+  sanctions(@CurrentUser() user: AuthPrincipal): Promise<Sanction | null> {
+    return this.me.activeSanction(user)
+  }
+
+  @Get('appeals')
+  appeals(
+    @CurrentUser() user: AuthPrincipal,
+    @Query('sanction_id') sanctionId?: string,
+  ): Promise<Appeal | null> {
+    return this.me.latestAppeal(user, sanctionId)
+  }
+
+  @Post('appeals')
+  @HttpCode(204)
+  createAppeal(
+    @CurrentUser() user: AuthPrincipal,
+    @Body() body: CreateAppealBodyDto,
+  ): Promise<void> {
+    return this.me.createAppeal(body, user)
+  }
+
+  // ── Visible users (Wave E) ───────────────────────────────────────────────
+  @Get('visible-users')
+  visibleUsers(
+    @CurrentUser() user: AuthPrincipal,
+    @Query() q: VisibleUsersQueryDto,
+  ): Promise<VisibleUser[]> {
+    return this.me.visibleUsers(q.ids, user)
   }
 }

@@ -11,6 +11,7 @@ import { CommunitiesModule } from './modules/communities/communities.module'
 import { ReportsModule } from './modules/reports/reports.module'
 import { AuthModule } from './modules/auth/auth.module'
 import { StorageModule } from './modules/storage/storage.module'
+import { TelemetryModule } from './modules/telemetry/telemetry.module'
 
 /**
  * Root module. CoreModule is the cross-cutting backbone (guards, pipe,
@@ -33,6 +34,7 @@ import { StorageModule } from './modules/storage/storage.module'
     CommunitiesModule,
     ReportsModule,
     StorageModule,
+    TelemetryModule,
   ],
 })
 export class AppModule {}

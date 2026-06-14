@@ -1,15 +1,20 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import type {
+  Appeal,
+  AppNotification,
   Consent,
+  CreateAppealBody,
   EnrollCoursesBody,
   ProfileDetail,
   RequiredConsents,
+  Sanction,
   UpdateProfileBody,
   UpdateSettingsBody,
   UserCourse,
   UserSettings,
   UserStats,
+  VisibleUser,
 } from '@ekler/contracts'
 import { CONSENT_VERSION, REQUIRED_CONSENT_TYPES } from '@ekler/contracts'
 import { DRIZZLE, type Db } from '../../db/drizzle.module'
@@ -18,12 +23,15 @@ import type { AuthPrincipal } from '../../core/cls/cls-store'
 import {
   courses,
   deviceTokens,
+  moderationAppeals,
+  notifications,
   profiles,
   sessionParticipants,
   studySessions,
   userConsents,
   userCourses,
   userPresence,
+  userSanctions,
   userSettings,
   userSisterUniversities,
 } from '../../db/schema'
@@ -339,6 +347,137 @@ export class MeService {
           .values(unique.map((universityDomain) => ({ userId: user.userId, universityDomain })))
           .onConflictDoNothing()
       }
+    })
+  }
+
+  // ── Notifications inbox (READ surface; push DELIVERY is out of scope) ─────────
+
+  async notifications(user: AuthPrincipal): Promise<AppNotification[]> {
+    const rows = await this.db
+      .select({
+        id: notifications.id,
+        type: notifications.type,
+        title: notifications.title,
+        body: notifications.body,
+        data: notifications.data,
+        is_read: notifications.isRead,
+        created_at: notifications.createdAt,
+      })
+      .from(notifications)
+      .where(eq(notifications.recipientId, user.userId))
+      .orderBy(desc(notifications.createdAt))
+      .limit(50)
+    return rows as AppNotification[]
+  }
+
+  async markNotificationRead(id: string, user: AuthPrincipal): Promise<void> {
+    await this.db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(and(eq(notifications.id, id), eq(notifications.recipientId, user.userId)))
+  }
+
+  async markAllNotificationsRead(user: AuthPrincipal): Promise<void> {
+    await this.db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(and(eq(notifications.recipientId, user.userId), eq(notifications.isRead, false)))
+  }
+
+  async deleteNotification(id: string, user: AuthPrincipal): Promise<void> {
+    await this.db
+      .delete(notifications)
+      .where(and(eq(notifications.id, id), eq(notifications.recipientId, user.userId)))
+  }
+
+  async clearNotifications(user: AuthPrincipal): Promise<void> {
+    await this.db.delete(notifications).where(eq(notifications.recipientId, user.userId))
+  }
+
+  // ── Sanctions + appeals (quarantine screen) ──────────────────────────────────
+
+  /** The caller's active ban/restriction (most recent), or null. */
+  async activeSanction(user: AuthPrincipal): Promise<Sanction | null> {
+    const [row] = await this.db
+      .select({
+        id: userSanctions.id,
+        sanction_type: userSanctions.sanctionType,
+        reason: userSanctions.reason,
+        expires_at: userSanctions.expiresAt,
+        is_active: userSanctions.isActive,
+        created_at: userSanctions.createdAt,
+      })
+      .from(userSanctions)
+      .where(
+        and(
+          eq(userSanctions.userId, user.userId),
+          eq(userSanctions.isActive, true),
+          inArray(userSanctions.sanctionType, ['temp_ban', 'permanent_ban']),
+        ),
+      )
+      .orderBy(desc(userSanctions.createdAt))
+      .limit(1)
+    return (row as Sanction) ?? null
+  }
+
+  /** The caller's latest appeal (optionally for a specific sanction), or null. */
+  async latestAppeal(user: AuthPrincipal, sanctionId?: string): Promise<Appeal | null> {
+    const where = [eq(moderationAppeals.userId, user.userId)]
+    if (sanctionId) where.push(eq(moderationAppeals.sanctionId, sanctionId))
+    const [row] = await this.db
+      .select({
+        status: moderationAppeals.status,
+        admin_response: moderationAppeals.adminResponse,
+        created_at: moderationAppeals.createdAt,
+      })
+      .from(moderationAppeals)
+      .where(and(...where))
+      .orderBy(desc(moderationAppeals.createdAt))
+      .limit(1)
+    return (row as Appeal) ?? null
+  }
+
+  /** Submit a moderation appeal. A pending appeal blocks a new one. */
+  async createAppeal(body: CreateAppealBody, user: AuthPrincipal): Promise<void> {
+    const [pending] = await this.db
+      .select({ id: moderationAppeals.id })
+      .from(moderationAppeals)
+      .where(and(eq(moderationAppeals.userId, user.userId), eq(moderationAppeals.status, 'pending')))
+      .limit(1)
+    if (pending) throw new AppError('CONFLICT', 'Halihazırda incelenen bir itirazın var.')
+
+    await this.db.insert(moderationAppeals).values({
+      userId: user.userId,
+      appealType: body.appeal_type,
+      relatedEntityType: body.related_entity_type,
+      relatedEntityId: body.related_entity_id,
+      sanctionId: body.sanction_id,
+      reason: body.reason,
+    })
+  }
+
+  // ── Visible users (bulk visibility + presence) ───────────────────────────────
+
+  /**
+   * Port of the get_visible_users RPC. The function reads auth.uid() for the viewer's
+   * university scope, so we set the jwt-claims transaction-locally (same trick as the
+   * confession create RPC) — reset at commit, never leaks across the pool.
+   */
+  async visibleUsers(idsCsv: string, user: AuthPrincipal): Promise<VisibleUser[]> {
+    const ids = idsCsv
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (ids.length === 0) return []
+
+    const claims = JSON.stringify({ sub: user.userId, role: 'authenticated' })
+    return this.db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('request.jwt.claims', ${claims}, true)`)
+      const res = (await tx.execute(
+        sql`select user_id, display_name, avatar_url, is_hidden, is_online, last_seen_at
+            from public.get_visible_users(${ids}::uuid[])`,
+      )) as unknown as { rows: VisibleUser[] }
+      return res.rows
     })
   }
 }

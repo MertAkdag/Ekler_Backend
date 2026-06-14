@@ -166,3 +166,61 @@ export const sisterUniversitiesBodySchema = z.object({
   domains: z.array(z.string().min(1).max(255)).max(50),
 })
 export type SisterUniversitiesBody = z.infer<typeof sisterUniversitiesBodySchema>
+
+// ─── Cross-cutting (Wave E) ──────────────────────────────────────────────────
+
+/** GET /v1/me/notifications — the in-app inbox (push DELIVERY is out of scope). */
+export const appNotificationSchema = z.object({
+  id: z.string(),
+  type: z.string(),
+  title: z.string(),
+  body: z.string(),
+  data: z.record(z.string(), z.unknown()).nullable(),
+  is_read: z.boolean(),
+  created_at: z.string(),
+})
+export type AppNotification = z.infer<typeof appNotificationSchema>
+
+/** GET /v1/me/sanctions — the caller's active ban/restriction (quarantine screen). */
+export const sanctionSchema = z.object({
+  id: z.string(),
+  sanction_type: z.string(),
+  reason: z.string().nullable(),
+  expires_at: z.string().nullable(),
+  is_active: z.boolean(),
+  created_at: z.string(),
+})
+export type Sanction = z.infer<typeof sanctionSchema>
+
+/** GET /v1/me/appeals — the caller's latest moderation appeal. */
+export const appealSchema = z.object({
+  status: z.string(),
+  admin_response: z.string().nullable(),
+  created_at: z.string(),
+})
+export type Appeal = z.infer<typeof appealSchema>
+
+/** POST /v1/me/appeals — submit a moderation appeal. */
+export const createAppealBodySchema = z.object({
+  appeal_type: z.enum(['sanction', 'content_removal', 'account_ban']).default('sanction'),
+  related_entity_type: z.string().nullable().default(null),
+  related_entity_id: z.string().uuid().nullable().default(null),
+  sanction_id: z.string().uuid().nullable().default(null),
+  reason: z.string().trim().min(10).max(2000),
+})
+export type CreateAppealBody = z.infer<typeof createAppealBodySchema>
+
+/** GET /v1/me/visible-users?ids=a,b,c — bulk visibility + presence (get_visible_users). */
+export const visibleUserSchema = z.object({
+  user_id: z.string(),
+  display_name: z.string(),
+  avatar_url: z.string().nullable(),
+  is_hidden: z.boolean(),
+  is_online: z.boolean(),
+  last_seen_at: z.string().nullable(),
+})
+export type VisibleUser = z.infer<typeof visibleUserSchema>
+export const visibleUsersQuerySchema = z.object({
+  ids: z.string().min(1), // comma-separated uuids
+})
+export type VisibleUsersQuery = z.infer<typeof visibleUsersQuerySchema>
