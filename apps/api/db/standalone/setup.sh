@@ -42,5 +42,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 "$PGBIN/psql"     -p "$PORT" -U "$SUPER" -d "$DB" -v ON_ERROR_STOP=1 -f "$DIR/05-seed.sql"
 # 06 — seed faculties + departments (onboarding pickers).
 "$PGBIN/psql"     -p "$PORT" -U "$SUPER" -d "$DB" -v ON_ERROR_STOP=1 -f "$DIR/06-faculties-departments.sql"
+# 07 — seed Kürsü moderation word rules (else nothing is blocked/reviewed).
+"$PGBIN/psql"     -p "$PORT" -U "$SUPER" -d "$DB" -v ON_ERROR_STOP=1 -f "$DIR/07-moderation-rules.sql"
 
 echo "✓ standalone '$DB' ready on :$PORT (DATABASE_URL=postgresql://$SUPER@localhost:$PORT/$DB)"
