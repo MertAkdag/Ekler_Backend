@@ -19,7 +19,7 @@ import {
 } from './storage.authz'
 
 /** Private buckets whose reads are gated by ownership/tenancy. */
-type GuardedBucket = Extract<StorageBucket, 'confessions' | 'notes'>
+type GuardedBucket = Extract<StorageBucket, 'confessions' | 'notes' | 'communities'>
 
 @Controller('storage')
 export class StorageController {
@@ -45,6 +45,15 @@ export class StorageController {
     @Body() body: SignPathsDto,
   ): Promise<SignPathsResponse> {
     return this.signBatch(user, body, 'notes')
+  }
+
+  /** Batch-sign community avatars (private bucket), tenancy-guarded the same way. */
+  @Post('signed-community')
+  async signCommunity(
+    @CurrentUser() user: AuthPrincipal,
+    @Body() body: SignPathsDto,
+  ): Promise<SignPathsResponse> {
+    return this.signBatch(user, body, 'communities')
   }
 
   /**
@@ -126,8 +135,16 @@ export class StorageController {
     const viewerDomain = user.universityDomain
     if (toCheck.length === 0 || !viewerDomain) return authorized
 
-    const col = bucket === 'confessions' ? sql`image_url` : sql`file_url`
-    const tbl = bucket === 'confessions' ? sql`public.confessions` : sql`public.notes`
+    // Each guarded bucket is backed by a domain-scoped table column holding the
+    // object path: confessions.image_url, notes.file_url, communities.avatar_url.
+    const col =
+      bucket === 'confessions' ? sql`image_url` : bucket === 'notes' ? sql`file_url` : sql`avatar_url`
+    const tbl =
+      bucket === 'confessions'
+        ? sql`public.confessions`
+        : bucket === 'notes'
+          ? sql`public.notes`
+          : sql`public.communities`
     const patterns = toCheck.map((p) => `%${escapeLike(p)}`)
     const res = (await this.db.execute(sql`
       select ${col} as url
