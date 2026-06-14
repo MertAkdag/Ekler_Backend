@@ -45,3 +45,33 @@ export const eventFeedRowSchema = z.object({
   cities: z.object({ name: z.string().nullable() }).nullable(),
 })
 export type EventFeedRow = z.infer<typeof eventFeedRowSchema>
+
+// ─── Stories + logs + city-context (Wave E) ──────────────────────────────────
+
+/**
+ * GET /events/stories — one active story slot + its nested event (same `city_events`
+ * nesting as the feed row), so the RN `mapEventStorySlotRows` consumes both paths.
+ */
+export const eventStorySlotRowSchema = z.object({
+  id: z.string(),
+  event_id: z.string(),
+  slot_index: z.number().int(),
+  title_override: z.string().nullable(),
+  starts_at: z.string(),
+  ends_at: z.string(),
+  city_events: eventFeedRowSchema,
+})
+export type EventStorySlotRow = z.infer<typeof eventStorySlotRowSchema>
+
+/** POST /events/logs — campaign analytics event (viewer fields from the principal). */
+export const logEventBodySchema = z.object({
+  event_id: z.string().uuid().nullable().default(null),
+  story_slot_id: z.string().uuid().nullable().default(null),
+  event_type: z.enum(['story_impression', 'story_tap', 'detail_open', 'cta_click', 'map_open']),
+  source: z.enum(['mobile', 'admin', 'landing']).default('mobile'),
+})
+export type LogEventBody = z.infer<typeof logEventBodySchema>
+
+/** GET /events/city-context — the caller's resolved city (from university_domain). */
+export const viewerCitySchema = z.object({ id: z.string(), name: z.string() })
+export type ViewerCity = z.infer<typeof viewerCitySchema>
