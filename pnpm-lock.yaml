@@ -27,6 +27,12 @@ importers:
       '@adminjs/sql':
         specifier: ^2.1.1
         version: 2.2.6(@types/node@22.19.20)(adminjs@7.8.17(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31))
+      '@aws-sdk/client-s3':
+        specifier: ^3.1065.0
+        version: 3.1065.0
+      '@aws-sdk/s3-request-presigner':
+        specifier: ^3.1065.0
+        version: 3.1065.0
       adminjs:
         specifier: ^7.8.13
         version: 7.8.17(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)

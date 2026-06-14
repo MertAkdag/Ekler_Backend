@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@adminjs/design-system": "4.1.1",
+    "@aws-sdk/client-s3": "^3.1065.0",
+    "@aws-sdk/s3-request-presigner": "^3.1065.0",
     "@adminjs/express": "^6.1.0",
     "@adminjs/sql": "^2.1.1",
     "adminjs": "^7.8.13",
