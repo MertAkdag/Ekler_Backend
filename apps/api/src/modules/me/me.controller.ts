@@ -252,4 +252,16 @@ export class MeController {
   ): Promise<void> {
     return this.me.unblockUser(blockedId, user)
   }
+
+  // ── GDPR (Wave F) — delete account + export data ──────────────────────────
+  @Delete()
+  @HttpCode(204)
+  deleteAccount(@CurrentUser() user: AuthPrincipal): Promise<void> {
+    return this.me.deleteAccount(user)
+  }
+
+  @Get('export')
+  exportData(@CurrentUser() user: AuthPrincipal): Promise<Record<string, unknown>> {
+    return this.me.exportData(user)
+  }
 }

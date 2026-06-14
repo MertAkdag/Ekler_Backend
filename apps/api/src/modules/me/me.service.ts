@@ -21,11 +21,15 @@ import type {
 import { CONSENT_VERSION, REQUIRED_CONSENT_TYPES } from '@ekler/contracts'
 import { DRIZZLE, type Db } from '../../db/drizzle.module'
 import { AppError } from '../../core/errors/app-error'
+import { StorageService } from '../storage/storage.service'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 import {
+  confessionComments,
+  confessions,
   courses,
   deviceTokens,
   moderationAppeals,
+  notes,
   notifications,
   profiles,
   sessionParticipants,
@@ -97,7 +101,10 @@ function rethrowUsernameConflict(err: unknown): never {
  */
 @Injectable()
 export class MeService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly storage: StorageService,
+  ) {}
 
   /** The caller's full profile (base AuthContext fields + profile-screen fields). */
   async profile(user: AuthPrincipal): Promise<ProfileDetail> {
@@ -523,6 +530,99 @@ export class MeService {
     )) as unknown as { rows: Array<{ blocked: boolean }> }
     return { blocked: res.rows[0]?.blocked ?? false }
   }
+
+  // ── GDPR (Wave F) — replaces the delete-user / export-my-data edge functions ──
+
+  /**
+   * Delete the account. Collects storage keys first, then deletes the auth identity —
+   * every owned row (profile, confessions, notes, comments, sessions, memberships,
+   * settings, consents, sanctions, blocks, …) is wiped by FK onDelete cascade. Stored
+   * files are then removed best-effort (a failed cleanup never fails the deletion).
+   */
+  async deleteAccount(user: AuthPrincipal): Promise<void> {
+    const uid = user.userId
+    const imgs = await this.db
+      .select({ k: confessions.imageUrl })
+      .from(confessions)
+      .where(eq(confessions.authorId, uid))
+    const files = await this.db
+      .select({ k: notes.fileUrl })
+      .from(notes)
+      .where(eq(notes.authorId, uid))
+
+    await this.db.execute(sql`delete from auth.users where id = ${uid}::uuid`)
+
+    if (this.storage.enabled) {
+      for (const r of imgs) {
+        const key = gdprStorageKey(r.k)
+        if (key) {
+          try {
+            await this.storage.deleteObject('confessions', key)
+          } catch {
+            /* best-effort */
+          }
+        }
+      }
+      for (const r of files) {
+        const key = gdprStorageKey(r.k)
+        if (key) {
+          try {
+            await this.storage.deleteObject('notes', key)
+          } catch {
+            /* best-effort */
+          }
+        }
+      }
+    }
+  }
+
+  /** Assemble the caller's data into a single JSON object (KVKK/GDPR data portability). */
+  async exportData(user: AuthPrincipal): Promise<Record<string, unknown>> {
+    const uid = user.userId
+    const [
+      profile,
+      myConfessions,
+      myComments,
+      myNotes,
+      mySessions,
+      myCourses,
+      settings,
+      sanctions,
+      appeals,
+      consents,
+    ] = await Promise.all([
+      this.db.select().from(profiles).where(eq(profiles.id, uid)).limit(1),
+      this.db.select().from(confessions).where(eq(confessions.authorId, uid)),
+      this.db.select().from(confessionComments).where(eq(confessionComments.authorId, uid)),
+      this.db.select().from(notes).where(eq(notes.authorId, uid)),
+      this.db.select().from(studySessions).where(eq(studySessions.creatorId, uid)),
+      this.db.select().from(userCourses).where(eq(userCourses.userId, uid)),
+      this.db.select().from(userSettings).where(eq(userSettings.userId, uid)),
+      this.db.select().from(userSanctions).where(eq(userSanctions.userId, uid)),
+      this.db.select().from(moderationAppeals).where(eq(moderationAppeals.userId, uid)),
+      this.db.select().from(userConsents).where(eq(userConsents.userId, uid)),
+    ])
+
+    const blocks = (await this.db.execute(
+      sql`select blocked_id, reason, created_at from public.blocked_users where blocker_id = ${uid}::uuid`,
+    )) as unknown as { rows: unknown[] }
+
+    return {
+      exported_at: new Date().toISOString(),
+      user_id: uid,
+      profile: profile[0] ?? null,
+      confessions: myConfessions,
+      confession_comments: myComments,
+      notes: myNotes,
+      study_sessions: mySessions,
+      courses: myCourses,
+      settings: settings[0] ?? null,
+      sanctions,
+      appeals,
+      consents,
+      blocked_users: blocks.rows,
+    }
+  }
 }
 
 /** True if the error is a Postgres unique-violation (drizzle wraps it on `.cause`). */
@@ -530,6 +630,12 @@ function blockUniqueViolation(err: unknown): boolean {
   const code =
     (err as { cause?: { code?: string } })?.cause?.code ?? (err as { code?: string })?.code
   return code === '23505'
+}
+
+/** A Node-stored object key (bare key), or null for none / legacy full URLs we can't map. */
+function gdprStorageKey(value: string | null): string | null {
+  if (!value || value.includes('://')) return null
+  return value
 }
 
 /** snake_case settings → drizzle camelCase columns (only the provided keys). */
