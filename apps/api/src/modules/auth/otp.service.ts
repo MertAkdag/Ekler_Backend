@@ -127,7 +127,13 @@ export class OtpService {
         return 'expired' // expired → invalidate
       }
 
-      const stored = Buffer.isBuffer(row.code_hash) ? row.code_hash : Buffer.from(row.code_hash)
+      // node-postgres returns bytea as a Buffer, but drizzle's raw `execute` can surface
+      // it as the Postgres hex-text form ("\xAABB..") — decode that back to raw bytes,
+      // else the length never matches the 32-byte HMAC and every verify fails.
+      const rawHash = row.code_hash as unknown
+      const stored = Buffer.isBuffer(rawHash)
+        ? rawHash
+        : Buffer.from(String(rawHash).replace(/^\\x/i, ''), 'hex')
       const ok = stored.length === candidate.length && timingSafeEqual(stored, candidate)
 
       if (ok) {
