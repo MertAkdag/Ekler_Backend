@@ -14,6 +14,13 @@ import { courses } from '../../db/schema'
 import { escapeLike } from '../../core/sql/escape-like'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 
+/**
+ * Sentinel university_domain marking a course as GLOBAL — visible in every
+ * university's catalog, not just one. An admin adds a shared course (e.g. a
+ * common elective) by setting its university_domain to this value.
+ */
+const GLOBAL_COURSE_DOMAIN = '.edu.tr'
+
 @Injectable()
 export class CatalogService {
   constructor(
@@ -58,7 +65,11 @@ export class CatalogService {
    */
   async courses(search?: string): Promise<Course[]> {
     const domain = this.scope.domain()
-    const where = [eq(courses.universityDomain, domain)]
+    // The caller's own courses PLUS any global course (GLOBAL_COURSE_DOMAIN),
+    // which appears in every university's catalog.
+    const where = [
+      or(eq(courses.universityDomain, domain), eq(courses.universityDomain, GLOBAL_COURSE_DOMAIN))!,
+    ]
     if (search) {
       const term = `%${escapeLike(search)}%`
       where.push(or(ilike(courses.code, term), ilike(courses.name, term))!)
