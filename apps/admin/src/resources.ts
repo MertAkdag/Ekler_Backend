@@ -369,6 +369,17 @@ const READONLY_ACTIONS: ResourceOptions['actions'] = {
   bulkDelete: { isAccessible: false },
 }
 
+/**
+ * Tables whose PRIMARY KEY column is ALSO a foreign key (e.g. profiles.id →
+ * auth.users.id). @adminjs/sql's introspection types such a column as
+ * 'reference' and — because its column query joins key_column_usage without
+ * filtering on constraint — emits a duplicate non-PK `id` row that shadows the
+ * isId one. AdminJS then can't find an isId property and every record action
+ * (show/edit) fails with "You have to pass a valid recordId to the recordAction".
+ * Re-assert the real id property for these tables.
+ */
+const ID_OVERRIDE_TABLES = new Set(['profiles'])
+
 /** Tables whose SHOW body is replaced by the sectioned RecordShow component. */
 const SHOW_COMPONENT_TABLES = new Set([
   'city_events', 'event_submissions',
@@ -436,6 +447,14 @@ export function buildResources(publicDb: SqlDatabase, authDb: SqlDatabase): Reso
     }
     if (cfg.show) options.showProperties = cfg.show
     if (cfg.edit) options.editProperties = cfg.edit
+    // PK-is-also-FK introspection fix (see ID_OVERRIDE_TABLES): force the id
+    // property so record actions resolve a valid recordId.
+    if (ID_OVERRIDE_TABLES.has(cfg.table)) {
+      options.properties = {
+        ...options.properties,
+        id: { ...options.properties?.id, isId: true, type: 'uuid' },
+      }
+    }
     return { resource, options }
   })
 }
