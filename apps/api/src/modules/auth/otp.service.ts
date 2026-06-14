@@ -11,7 +11,7 @@ const MAX_REQUESTS_PER_HOUR = 5
 
 interface OtpRow {
   id: string
-  code_hash: Buffer
+  code_hash_hex: string // encode(code_hash,'hex') — forced text so drizzle's bytea handling can't corrupt it
   expires_at: string
   attempts: number
   max_attempts: number
@@ -110,7 +110,7 @@ export class OtpService {
     const candidate = this.hash(code)
     return await this.db.transaction(async (tx) => {
       const res = (await tx.execute(sql`
-        select id, code_hash, expires_at, attempts, max_attempts
+        select id, encode(code_hash, 'hex') as code_hash_hex, expires_at, attempts, max_attempts
         from public.auth_otp_codes
         where email = ${email} and consumed_at is null
         order by created_at desc
@@ -127,14 +127,17 @@ export class OtpService {
         return 'expired' // expired → invalidate
       }
 
-      // node-postgres returns bytea as a Buffer, but drizzle's raw `execute` can surface
-      // it as the Postgres hex-text form ("\xAABB..") — decode that back to raw bytes,
-      // else the length never matches the 32-byte HMAC and every verify fails.
-      const rawHash = row.code_hash as unknown
-      const stored = Buffer.isBuffer(rawHash)
-        ? rawHash
-        : Buffer.from(String(rawHash).replace(/^\\x/i, ''), 'hex')
+      // code_hash is read as hex text (encode(...,'hex')) so drizzle's bytea handling
+      // can't corrupt it — decode back to the raw 32 bytes for a constant-time compare.
+      const stored = Buffer.from(row.code_hash_hex, 'hex')
       const ok = stored.length === candidate.length && timingSafeEqual(stored, candidate)
+      if (!ok) {
+        // TEMP debug — stored vs computed; equal-but-failing ⇒ compare bug, different ⇒ wrong/superseded row.
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[otp-debug] mismatch email=${email} storedLen=${stored.length} stored=${row.code_hash_hex} cand=${candidate.toString('hex')}`,
+        )
+      }
 
       if (ok) {
         await tx.execute(sql`
