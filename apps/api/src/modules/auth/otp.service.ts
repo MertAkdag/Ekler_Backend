@@ -117,6 +117,11 @@ export class OtpService {
         limit 1
         for update
       `)) as unknown as { rows: OtpRow[] }
+      // TEMP debug — reveal the actual shape tx.execute returns (rows wrapper vs array).
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[otp-debug] email=${JSON.stringify(email)} isArray=${Array.isArray(res)} keys=${Object.keys(res as object).join(',')} rowsLen=${(res as { rows?: unknown[] }).rows?.length} resLen=${(res as unknown as unknown[]).length}`,
+      )
       const row = res.rows[0]
       if (!row) return 'invalid' // no active code
 
