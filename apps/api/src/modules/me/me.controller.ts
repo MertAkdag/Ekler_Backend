@@ -1,38 +1,151 @@
-import { Controller, Get, Inject } from '@nestjs/common'
-import { eq } from 'drizzle-orm'
-import type { Profile } from '@ekler/contracts'
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common'
+import type {
+  Consent,
+  ProfileDetail,
+  RequiredConsents,
+  UserCourse,
+  UserSettings,
+  UserStats,
+} from '@ekler/contracts'
 import { CurrentUser } from '../../core/auth/public.decorator'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
-import { AppError } from '../../core/errors/app-error'
-import { DRIZZLE, type Db } from '../../db/drizzle.module'
-import { profiles } from '../../db/schema'
+import { MeService } from './me.service'
+import {
+  DeviceTokenBodyDto,
+  EnrollCoursesBodyDto,
+  GrantConsentsBodyDto,
+  PresenceBodyDto,
+  SisterUniversitiesBodyDto,
+  UpdateProfileBodyDto,
+  UpdateSettingsBodyDto,
+  UsernameAvailableQueryDto,
+} from './me.dto'
 
 @Controller('me')
 export class MeController {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(private readonly me: MeService) {}
 
   /** The authenticated user's profile (snake_case — drop-in for RN `Profile`). */
   @Get()
-  async me(@CurrentUser() user: AuthPrincipal): Promise<Profile> {
-    const [row] = await this.db
-      .select({
-        id: profiles.id,
-        full_name: profiles.fullName,
-        username: profiles.username,
-        avatar_url: profiles.avatarUrl,
-        university_domain: profiles.universityDomain,
-        faculty: profiles.faculty,
-        department: profiles.department,
-        is_admin: profiles.isAdmin,
-        is_banned: profiles.isBanned,
-        is_restricted: profiles.isRestricted,
-        restriction_ends_at: profiles.restrictionEndsAt,
-      })
-      .from(profiles)
-      .where(eq(profiles.id, user.userId))
-      .limit(1)
+  profile(@CurrentUser() user: AuthPrincipal): Promise<ProfileDetail> {
+    return this.me.profile(user)
+  }
 
-    if (!row) throw new AppError('NOT_FOUND', 'Profile not found.')
-    return row
+  /** Partial profile update (onboarding + profile edit). */
+  @Patch()
+  updateProfile(
+    @CurrentUser() user: AuthPrincipal,
+    @Body() body: UpdateProfileBodyDto,
+  ): Promise<ProfileDetail> {
+    return this.me.updateProfile(body, user)
+  }
+
+  /** Username availability check (onboarding). */
+  @Get('username-available')
+  usernameAvailable(
+    @CurrentUser() user: AuthPrincipal,
+    @Query() q: UsernameAvailableQueryDto,
+  ): Promise<{ available: boolean }> {
+    return this.me.usernameAvailable(q.username, user)
+  }
+
+  /** Profile header counts. */
+  @Get('stats')
+  stats(@CurrentUser() user: AuthPrincipal): Promise<UserStats> {
+    return this.me.stats(user)
+  }
+
+  // ── Courses ──────────────────────────────────────────────────────────────
+  @Get('courses')
+  courses(@CurrentUser() user: AuthPrincipal): Promise<UserCourse[]> {
+    return this.me.courses(user)
+  }
+
+  @Post('courses')
+  @HttpCode(204)
+  enrollCourses(
+    @CurrentUser() user: AuthPrincipal,
+    @Body() body: EnrollCoursesBodyDto,
+  ): Promise<void> {
+    return this.me.enrollCourses(body, user)
+  }
+
+  @Delete('courses/:courseId')
+  @HttpCode(204)
+  deleteCourse(
+    @CurrentUser() user: AuthPrincipal,
+    @Param('courseId') courseId: string,
+  ): Promise<void> {
+    return this.me.deleteCourse(courseId, user)
+  }
+
+  // ── Settings ─────────────────────────────────────────────────────────────
+  @Get('settings')
+  settings(@CurrentUser() user: AuthPrincipal): Promise<UserSettings> {
+    return this.me.settings(user)
+  }
+
+  @Post('settings')
+  updateSettings(
+    @CurrentUser() user: AuthPrincipal,
+    @Body() body: UpdateSettingsBodyDto,
+  ): Promise<UserSettings> {
+    return this.me.updateSettings(body, user)
+  }
+
+  // ── Presence ─────────────────────────────────────────────────────────────
+  @Post('presence')
+  @HttpCode(204)
+  presence(@CurrentUser() user: AuthPrincipal, @Body() body: PresenceBodyDto): Promise<void> {
+    return this.me.touchPresence(body.is_online, user)
+  }
+
+  // ── Device tokens (push delivery deferred; storage only) ─────────────────
+  @Post('device-tokens')
+  @HttpCode(204)
+  registerDeviceToken(
+    @CurrentUser() user: AuthPrincipal,
+    @Body() body: DeviceTokenBodyDto,
+  ): Promise<void> {
+    return this.me.registerDeviceToken(body.expo_push_token, body.platform, user)
+  }
+
+  @Delete('device-tokens')
+  @HttpCode(204)
+  deleteDeviceToken(
+    @CurrentUser() user: AuthPrincipal,
+    @Query('token') token: string,
+  ): Promise<void> {
+    return this.me.deleteDeviceToken(token ?? '', user)
+  }
+
+  // ── Consents ─────────────────────────────────────────────────────────────
+  @Get('consents')
+  consents(@CurrentUser() user: AuthPrincipal): Promise<Consent[]> {
+    return this.me.consents(user)
+  }
+
+  @Get('required-consents')
+  requiredConsents(): RequiredConsents {
+    return this.me.requiredConsents()
+  }
+
+  @Post('consents')
+  @HttpCode(204)
+  grantConsents(
+    @CurrentUser() user: AuthPrincipal,
+    @Body() body: GrantConsentsBodyDto,
+  ): Promise<void> {
+    return this.me.grantConsents(body.consent_types, user)
+  }
+
+  // ── Sister universities ──────────────────────────────────────────────────
+  @Put('sister-universities')
+  @HttpCode(204)
+  replaceSisterUniversities(
+    @CurrentUser() user: AuthPrincipal,
+    @Body() body: SisterUniversitiesBodyDto,
+  ): Promise<void> {
+    return this.me.replaceSisterUniversities(body.domains, user)
   }
 }
