@@ -1,0 +1,86 @@
+# EKLER — full stack on one host. CloudPanel (nginx) is the reverse proxy + HTTPS
+# in front of this; every service binds to 127.0.0.1 only (not exposed to the
+# internet directly). CloudPanel "Reverse Proxy" sites forward the public
+# subdomains to these local ports:
+#   api.ekler.app     -> 127.0.0.1:3010   (the NestJS API, path prefix /v1)
+#   admin.ekler.app   -> 127.0.0.1:3020   (the AdminJS panel)
+#   storage.ekler.app -> 127.0.0.1:9000   (MinIO S3 — raise client_max_body_size!)
+#
+# Values like ${POSTGRES_PASSWORD} are read from the .env file next to this file.
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ekler
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # The standalone recipe (00..04) runs ONCE on first boot via the init script.
+      - ./apps/api/db/standalone:/standalone:ro
+      - ./deploy/db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d ekler']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - miniodata:/data
+    ports:
+      - '127.0.0.1:9000:9000' # S3 API  (storage.ekler.app proxies here)
+      - '127.0.0.1:9001:9001' # console (optional; proxy a 4th subdomain if you want it)
+
+  # One-shot: create the three buckets, make `communities` publicly readable.
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      - minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    entrypoint: >
+      /bin/sh -c "
+      until /usr/bin/mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}; do echo waiting for minio; sleep 2; done;
+      /usr/bin/mc mb -p local/ekler-confessions;
+      /usr/bin/mc mb -p local/ekler-notes;
+      /usr/bin/mc mb -p local/ekler-communities;
+      /usr/bin/mc anonymous set download local/ekler-communities;
+      echo done; exit 0;"
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    ports:
+      - '127.0.0.1:3010:3010'
+    command: ['node', 'apps/api/dist/main.js']
+
+  admin:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:3020:3020'
+    command: ['pnpm', '--filter', '@ekler/admin', 'start']
+
+volumes:
+  pgdata:
+  miniodata:
