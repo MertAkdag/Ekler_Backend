@@ -40,5 +40,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 "$PGBIN/psql"     -p "$PORT" -U "$SUPER" -d "$DB" -v ON_ERROR_STOP=1 -f "$DIR/04-catalog-and-blocks.sql"
 # 05 — seed reference data (cities + universities) so .edu.tr logins resolve.
 "$PGBIN/psql"     -p "$PORT" -U "$SUPER" -d "$DB" -v ON_ERROR_STOP=1 -f "$DIR/05-seed.sql"
+# 06 — seed faculties + departments (onboarding pickers).
+"$PGBIN/psql"     -p "$PORT" -U "$SUPER" -d "$DB" -v ON_ERROR_STOP=1 -f "$DIR/06-faculties-departments.sql"
 
 echo "✓ standalone '$DB' ready on :$PORT (DATABASE_URL=postgresql://$SUPER@localhost:$PORT/$DB)"
