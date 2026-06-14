@@ -1,10 +1,22 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { and, desc, eq, sql } from 'drizzle-orm'
-import type { NoteFeedQuery, NoteFeedRow, NoteVoteBody } from '@ekler/contracts'
+import { and, asc, desc, eq, sql } from 'drizzle-orm'
+import type {
+  CreateNoteBody,
+  CreateNoteCommentBody,
+  CreateNoteResult,
+  ListEnvelope,
+  NoteCommentRow,
+  NoteCommentsQuery,
+  NoteFeedQuery,
+  NoteFeedRow,
+  NoteVoteBody,
+} from '@ekler/contracts'
 import { DRIZZLE, type Db } from '../../db/drizzle.module'
 import { ScopedRepository } from '../../db/scoped/scoped-repository'
-import { courses, noteVotes, notes, profiles, userSettings } from '../../db/schema'
+import { courses, noteComments, noteVotes, notes, profiles, userSettings } from '../../db/schema'
+import { encodeCursor } from '../../core/pagination/cursor'
 import { AppError } from '../../core/errors/app-error'
+import { StorageService } from '../storage/storage.service'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 
 /**
@@ -21,6 +33,7 @@ export class NotesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly scope: ScopedRepository,
+    private readonly storage: StorageService,
   ) {}
 
   async feed(q: NoteFeedQuery, user: AuthPrincipal): Promise<NoteFeedRow[]> {
@@ -112,5 +125,156 @@ export class NotesService {
         })
       }
     })
+  }
+
+  /** Create a note record (file already uploaded to storage; we store its key). */
+  async create(input: CreateNoteBody, user: AuthPrincipal): Promise<CreateNoteResult> {
+    const domain = this.scope.domain()
+    await this.assertNotBanned(user.userId)
+    const [row] = await this.db
+      .insert(notes)
+      .values({
+        authorId: user.userId,
+        uploaderId: user.userId,
+        courseId: input.course_id,
+        universityDomain: domain,
+        title: input.title,
+        description: input.description ?? null,
+        fileUrl: input.file_url,
+        fileType: input.file_type,
+        fileSizeBytes: input.file_size_bytes ?? null,
+      })
+      .returning({ id: notes.id })
+    if (!row) throw new AppError('INTERNAL', 'Not oluşturulamadı.')
+    return { id: row.id }
+  }
+
+  /** Delete a note — author or admin only; cascades comments/votes, best-effort file cleanup. */
+  async remove(noteId: string, user: AuthPrincipal): Promise<void> {
+    const [row] = await this.db
+      .select({ authorId: notes.authorId, fileUrl: notes.fileUrl })
+      .from(notes)
+      .where(and(this.scope.scopeFilter(notes.universityDomain), sql`${notes.id} = ${noteId}::uuid`))
+      .limit(1)
+    if (!row) throw new AppError('NOT_FOUND', 'Not bulunamadı.')
+    if (row.authorId !== user.userId && !user.isAdmin) {
+      throw new AppError('FORBIDDEN', 'Bu notu silme yetkin yok.')
+    }
+
+    await this.db
+      .delete(notes)
+      .where(and(this.scope.scopeFilter(notes.universityDomain), sql`${notes.id} = ${noteId}::uuid`))
+
+    if (row.fileUrl && !row.fileUrl.includes('://') && this.storage.enabled) {
+      try {
+        await this.storage.deleteObject('notes', row.fileUrl)
+      } catch {
+        // best-effort file cleanup — never fail the delete on storage errors
+      }
+    }
+  }
+
+  /** Atomic +1 download counter (increment_note_download). Scoped to the caller's university. */
+  async download(noteId: string, user: AuthPrincipal): Promise<void> {
+    void user
+    await this.requireInScope(noteId)
+    await this.db.execute(sql`select public.increment_note_download(${noteId}::uuid)`)
+  }
+
+  /** Comments for a note — accountable (username shown), keyset ASC, scoped via the parent note. */
+  async comments(
+    noteId: string,
+    q: NoteCommentsQuery,
+    user: AuthPrincipal,
+  ): Promise<ListEnvelope<NoteCommentRow>> {
+    const uid = user.userId
+    const where = [
+      sql`${noteComments.noteId} = ${noteId}::uuid`,
+      this.scope.scopeFilter(notes.universityDomain),
+      q.cursor_created_at && q.cursor_id
+        ? sql`(${noteComments.createdAt}, ${noteComments.id}) > (${q.cursor_created_at}::timestamptz, ${q.cursor_id}::uuid)`
+        : undefined,
+    ]
+
+    const rows = await this.db
+      .select({
+        id: noteComments.id,
+        body: noteComments.body,
+        created_at: noteComments.createdAt,
+        is_mine: sql<boolean>`${noteComments.userId} = ${uid}::uuid`,
+        user_id: noteComments.userId,
+        author_name: sql<string | null>`coalesce(${profiles.fullName}, ${profiles.username})`,
+        author_username: profiles.username,
+        author_avatar: profiles.avatarUrl,
+      })
+      .from(noteComments)
+      .innerJoin(notes, eq(notes.id, noteComments.noteId))
+      .leftJoin(profiles, eq(profiles.id, noteComments.userId))
+      .where(and(...where))
+      .orderBy(asc(noteComments.createdAt), asc(noteComments.id))
+      .limit(q.limit)
+
+    const hasMore = rows.length === q.limit
+    const last = rows[rows.length - 1]
+    const cursor =
+      hasMore && last ? encodeCursor({ created_at: last.created_at as string, id: last.id }) : null
+    return { data: rows as NoteCommentRow[], meta: { cursor, has_more: hasMore } }
+  }
+
+  /** Add a comment to a note (accountable). comment_count is maintained by a DB trigger. */
+  async createComment(
+    noteId: string,
+    input: CreateNoteCommentBody,
+    user: AuthPrincipal,
+  ): Promise<NoteCommentRow> {
+    await this.requireInScope(noteId)
+    await this.assertNotBanned(user.userId)
+
+    const [inserted] = await this.db
+      .insert(noteComments)
+      .values({ noteId, userId: user.userId, body: input.body })
+      .returning({ id: noteComments.id, created_at: noteComments.createdAt })
+    if (!inserted) throw new AppError('INTERNAL', 'Yorum oluşturulamadı.')
+
+    const [author] = await this.db
+      .select({
+        full_name: profiles.fullName,
+        username: profiles.username,
+        avatar_url: profiles.avatarUrl,
+      })
+      .from(profiles)
+      .where(eq(profiles.id, user.userId))
+      .limit(1)
+
+    return {
+      id: inserted.id,
+      body: input.body,
+      created_at: inserted.created_at as string,
+      is_mine: true,
+      user_id: user.userId,
+      author_name: author?.full_name ?? author?.username ?? null,
+      author_username: author?.username ?? null,
+      author_avatar: author?.avatar_url ?? null,
+    }
+  }
+
+  /** Fail-closed 404 if the note isn't in the caller's university (anti-K-1). */
+  private async requireInScope(noteId: string): Promise<void> {
+    const [found] = await this.db
+      .select({ id: notes.id })
+      .from(notes)
+      .where(and(this.scope.scopeFilter(notes.universityDomain), sql`${notes.id} = ${noteId}::uuid`))
+      .limit(1)
+    if (!found) throw new AppError('NOT_FOUND', 'Not bulunamadı.')
+  }
+
+  /** Ban/restriction gate for note writes. */
+  private async assertNotBanned(uid: string): Promise<void> {
+    const res = (await this.db.execute(
+      sql`select public.is_user_banned(${uid}::uuid) as banned, public.is_user_restricted(${uid}::uuid) as restricted`,
+    )) as unknown as { rows: Array<{ banned: boolean; restricted: boolean }> }
+    const row = res.rows[0]
+    if (row?.banned) throw new AppError('USER_BANNED', 'Hesabın askıya alındığı için işlem yapamıyorsun.')
+    if (row?.restricted) throw new AppError('FORBIDDEN', 'Hesabın kısıtlı olduğu için işlem yapamıyorsun.')
   }
 }

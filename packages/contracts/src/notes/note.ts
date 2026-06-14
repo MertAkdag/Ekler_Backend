@@ -47,3 +47,43 @@ export const noteFeedRowSchema = z.object({
   is_mine: z.boolean(),
 })
 export type NoteFeedRow = z.infer<typeof noteFeedRowSchema>
+
+// ─── Write surface (Wave C) ──────────────────────────────────────────────────
+
+/** POST /notes — create a note record (the file is uploaded to storage first; this carries its key). */
+export const createNoteBodySchema = z.object({
+  course_id: z.string().uuid(),
+  title: z.string().trim().min(2).max(120),
+  description: z.string().trim().max(300).nullable().optional(),
+  file_url: z.string().min(1), // storage object key
+  file_type: z.enum(['pdf', 'image']).default('pdf'),
+  file_size_bytes: z.number().int().nonnegative().nullable().optional(),
+})
+export type CreateNoteBody = z.infer<typeof createNoteBodySchema>
+export const createNoteResultSchema = z.object({ id: z.string() })
+export type CreateNoteResult = z.infer<typeof createNoteResultSchema>
+
+/** GET /notes/:id/comments — accountable (username shown), keyset ASC by (created_at, id). */
+export const noteCommentRowSchema = z.object({
+  id: z.string(),
+  body: z.string(),
+  created_at: z.string(),
+  is_mine: z.boolean(),
+  user_id: z.string(),
+  author_name: z.string().nullable(),
+  author_username: z.string().nullable(),
+  author_avatar: z.string().nullable(),
+})
+export type NoteCommentRow = z.infer<typeof noteCommentRowSchema>
+
+export const noteCommentsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
+  cursor_created_at: z.string().optional(),
+  cursor_id: z.string().uuid().optional(),
+})
+export type NoteCommentsQuery = z.infer<typeof noteCommentsQuerySchema>
+
+export const createNoteCommentBodySchema = z.object({
+  body: z.string().trim().min(1).max(500),
+})
+export type CreateNoteCommentBody = z.infer<typeof createNoteCommentBodySchema>
