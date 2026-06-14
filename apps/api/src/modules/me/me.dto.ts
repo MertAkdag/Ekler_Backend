@@ -1,9 +1,11 @@
 import { createZodDto } from 'nestjs-zod'
 import {
+  blockUserBodySchema,
   createAppealBodySchema,
   deviceTokenBodySchema,
   enrollCoursesBodySchema,
   grantConsentsBodySchema,
+  isBlockedQuerySchema,
   presenceBodySchema,
   sisterUniversitiesBodySchema,
   updateProfileBodySchema,
@@ -22,3 +24,5 @@ export class GrantConsentsBodyDto extends createZodDto(grantConsentsBodySchema) 
 export class SisterUniversitiesBodyDto extends createZodDto(sisterUniversitiesBodySchema) {}
 export class CreateAppealBodyDto extends createZodDto(createAppealBodySchema) {}
 export class VisibleUsersQueryDto extends createZodDto(visibleUsersQuerySchema) {}
+export class BlockUserBodyDto extends createZodDto(blockUserBodySchema) {}
+export class IsBlockedQueryDto extends createZodDto(isBlockedQuerySchema) {}

@@ -224,3 +224,22 @@ export const visibleUsersQuerySchema = z.object({
   ids: z.string().min(1), // comma-separated uuids
 })
 export type VisibleUsersQuery = z.infer<typeof visibleUsersQuerySchema>
+
+/** POST /v1/me/blocks — block a user (Apple App Review 1.2 UGC safety). */
+export const blockUserBodySchema = z.object({
+  blocked_id: z.string().uuid(),
+  reason: z.string().max(500).nullable().optional(),
+})
+export type BlockUserBody = z.infer<typeof blockUserBodySchema>
+/** GET /v1/me/blocks — the caller's block list. */
+export const blockedUserSchema = z.object({
+  blocked_id: z.string(),
+  created_at: z.string(),
+  reason: z.string().nullable(),
+})
+export type BlockedUser = z.infer<typeof blockedUserSchema>
+/** GET /v1/me/blocks/check?other=… — bidirectional block check (is_blocked_between). */
+export const isBlockedQuerySchema = z.object({ other: z.string().uuid() })
+export type IsBlockedQuery = z.infer<typeof isBlockedQuerySchema>
+export const isBlockedResultSchema = z.object({ blocked: z.boolean() })
+export type IsBlockedResult = z.infer<typeof isBlockedResultSchema>

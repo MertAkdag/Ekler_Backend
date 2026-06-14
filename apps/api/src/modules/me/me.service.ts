@@ -3,9 +3,11 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import type {
   Appeal,
   AppNotification,
+  BlockedUser,
   Consent,
   CreateAppealBody,
   EnrollCoursesBody,
+  IsBlockedResult,
   ProfileDetail,
   RequiredConsents,
   Sanction,
@@ -480,6 +482,54 @@ export class MeService {
       return res.rows
     })
   }
+
+  // ── Blocks (UGC safety, Apple App Review 1.2) ────────────────────────────────
+  // blocked_users is not in the Drizzle schema (it post-dates the 02 dump; added by
+  // standalone 04-catalog-and-blocks.sql), so these use raw SQL.
+
+  async blockUser(blockedId: string, reason: string | null, user: AuthPrincipal): Promise<void> {
+    if (blockedId === user.userId) {
+      throw new AppError('VALIDATION_FAILED', 'Kendini engelleyemezsin.')
+    }
+    try {
+      await this.db.execute(
+        sql`insert into public.blocked_users (blocker_id, blocked_id, reason)
+            values (${user.userId}::uuid, ${blockedId}::uuid, ${reason ?? null})`,
+      )
+    } catch (err) {
+      if (blockUniqueViolation(err)) return // already blocked → idempotent
+      throw err
+    }
+  }
+
+  async unblockUser(blockedId: string, user: AuthPrincipal): Promise<void> {
+    await this.db.execute(
+      sql`delete from public.blocked_users
+          where blocker_id = ${user.userId}::uuid and blocked_id = ${blockedId}::uuid`,
+    )
+  }
+
+  async listBlocked(user: AuthPrincipal): Promise<BlockedUser[]> {
+    const res = (await this.db.execute(
+      sql`select blocked_id, created_at, reason from public.blocked_users
+          where blocker_id = ${user.userId}::uuid order by created_at desc`,
+    )) as unknown as { rows: BlockedUser[] }
+    return res.rows
+  }
+
+  async isBlocked(otherId: string, user: AuthPrincipal): Promise<IsBlockedResult> {
+    const res = (await this.db.execute(
+      sql`select public.is_blocked_between(${user.userId}::uuid, ${otherId}::uuid) as blocked`,
+    )) as unknown as { rows: Array<{ blocked: boolean }> }
+    return { blocked: res.rows[0]?.blocked ?? false }
+  }
+}
+
+/** True if the error is a Postgres unique-violation (drizzle wraps it on `.cause`). */
+function blockUniqueViolation(err: unknown): boolean {
+  const code =
+    (err as { cause?: { code?: string } })?.cause?.code ?? (err as { code?: string })?.code
+  return code === '23505'
 }
 
 /** snake_case settings → drizzle camelCase columns (only the provided keys). */

@@ -4,12 +4,15 @@ import type {
   Course,
   Department,
   Faculty,
+  SuggestCourseBody,
+  SuggestCourseResult,
   UniversityByDomain,
 } from '@ekler/contracts'
 import { DRIZZLE, type Db } from '../../db/drizzle.module'
 import { ScopedRepository } from '../../db/scoped/scoped-repository'
 import { courses } from '../../db/schema'
 import { escapeLike } from '../../core/sql/escape-like'
+import type { AuthPrincipal } from '../../core/cls/cls-store'
 
 @Injectable()
 export class CatalogService {
@@ -65,5 +68,22 @@ export class CatalogService {
       .from(courses)
       .where(and(...where))
       .orderBy(asc(courses.code))
+  }
+
+  /**
+   * Crowdsource a missing course (wraps suggest_course — insert/endorse, auto-approve at
+   * 3 via DB trigger). The RPC reads auth.uid(), so we set jwt-claims transaction-locally.
+   * university_domain is the caller's (anti-K-1), never client-supplied.
+   */
+  async suggestCourse(input: SuggestCourseBody, user: AuthPrincipal): Promise<SuggestCourseResult> {
+    const domain = this.scope.domain()
+    const claims = JSON.stringify({ sub: user.userId, role: 'authenticated' })
+    return this.db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('request.jwt.claims', ${claims}, true)`)
+      const res = (await tx.execute(
+        sql`select public.suggest_course(${input.code}, ${input.name}, ${input.department_id}::uuid, ${domain}) as result`,
+      )) as unknown as { rows: Array<{ result: SuggestCourseResult }> }
+      return res.rows[0]?.result ?? { status: 'rate_limited' }
+    })
   }
 }

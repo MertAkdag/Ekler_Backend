@@ -2,7 +2,9 @@ import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query
 import type {
   Appeal,
   AppNotification,
+  BlockedUser,
   Consent,
+  IsBlockedResult,
   ProfileDetail,
   RequiredConsents,
   Sanction,
@@ -15,10 +17,12 @@ import { CurrentUser } from '../../core/auth/public.decorator'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 import { MeService } from './me.service'
 import {
+  BlockUserBodyDto,
   CreateAppealBodyDto,
   DeviceTokenBodyDto,
   EnrollCoursesBodyDto,
   GrantConsentsBodyDto,
+  IsBlockedQueryDto,
   PresenceBodyDto,
   SisterUniversitiesBodyDto,
   UpdateProfileBodyDto,
@@ -218,5 +222,34 @@ export class MeController {
     @Query() q: VisibleUsersQueryDto,
   ): Promise<VisibleUser[]> {
     return this.me.visibleUsers(q.ids, user)
+  }
+
+  // ── Blocks (Apple App Review 1.2 UGC safety) ─────────────────────────────
+  @Get('blocks')
+  blocks(@CurrentUser() user: AuthPrincipal): Promise<BlockedUser[]> {
+    return this.me.listBlocked(user)
+  }
+
+  @Get('blocks/check')
+  isBlocked(
+    @CurrentUser() user: AuthPrincipal,
+    @Query() q: IsBlockedQueryDto,
+  ): Promise<IsBlockedResult> {
+    return this.me.isBlocked(q.other, user)
+  }
+
+  @Post('blocks')
+  @HttpCode(204)
+  blockUser(@CurrentUser() user: AuthPrincipal, @Body() body: BlockUserBodyDto): Promise<void> {
+    return this.me.blockUser(body.blocked_id, body.reason ?? null, user)
+  }
+
+  @Delete('blocks/:blockedId')
+  @HttpCode(204)
+  unblockUser(
+    @CurrentUser() user: AuthPrincipal,
+    @Param('blockedId') blockedId: string,
+  ): Promise<void> {
+    return this.me.unblockUser(blockedId, user)
   }
 }
