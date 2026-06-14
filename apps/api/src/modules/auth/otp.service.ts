@@ -117,11 +117,6 @@ export class OtpService {
         limit 1
         for update
       `)) as unknown as { rows: OtpRow[] }
-      // TEMP debug — reveal the actual shape tx.execute returns (rows wrapper vs array).
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[otp-debug] email=${JSON.stringify(email)} isArray=${Array.isArray(res)} keys=${Object.keys(res as object).join(',')} rowsLen=${(res as { rows?: unknown[] }).rows?.length} resLen=${(res as unknown as unknown[]).length}`,
-      )
       const row = res.rows[0]
       if (!row) return 'invalid' // no active code
 
@@ -136,13 +131,6 @@ export class OtpService {
       // can't corrupt it — decode back to the raw 32 bytes for a constant-time compare.
       const stored = Buffer.from(row.code_hash_hex, 'hex')
       const ok = stored.length === candidate.length && timingSafeEqual(stored, candidate)
-      if (!ok) {
-        // TEMP debug — stored vs computed; equal-but-failing ⇒ compare bug, different ⇒ wrong/superseded row.
-        // eslint-disable-next-line no-console
-        console.warn(
-          `[otp-debug] mismatch email=${email} storedLen=${stored.length} stored=${row.code_hash_hex} cand=${candidate.toString('hex')}`,
-        )
-      }
 
       if (ok) {
         await tx.execute(sql`

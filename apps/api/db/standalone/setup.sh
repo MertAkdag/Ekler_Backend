@@ -38,5 +38,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 "$PGBIN/psql"     -p "$PORT" -U "$SUPER" -d "$DB" -v ON_ERROR_STOP=1 -f "$DIR/03-auth-p8.sql"
 # 04 — catalog crowdsourcing + UGC-safety blocks (objects missing from the 02 dump).
 "$PGBIN/psql"     -p "$PORT" -U "$SUPER" -d "$DB" -v ON_ERROR_STOP=1 -f "$DIR/04-catalog-and-blocks.sql"
+# 05 — seed reference data (cities + universities) so .edu.tr logins resolve.
+"$PGBIN/psql"     -p "$PORT" -U "$SUPER" -d "$DB" -v ON_ERROR_STOP=1 -f "$DIR/05-seed.sql"
 
 echo "✓ standalone '$DB' ready on :$PORT (DATABASE_URL=postgresql://$SUPER@localhost:$PORT/$DB)"
