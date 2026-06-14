@@ -11,3 +11,11 @@ export const Components = {
   RecordShow: componentLoader.add('RecordShow', './components/record-show'),
   SanctionForm: componentLoader.add('SanctionForm', './components/sanction-form'),
 }
+
+/**
+ * Marka override'ları — AdminJS'in dahili Login ve SidebarBranding bileşenlerini
+ * ekler kimliğiyle değiştirir (AdminJS logosu/illüstrasyonları yerine ekler mark +
+ * sözcük markası). Renkler/favicon/şirket adı index.ts'teki `branding` bloğunda.
+ */
+componentLoader.override('Login', './components/login')
+componentLoader.override('SidebarBranding', './components/sidebar-branding')

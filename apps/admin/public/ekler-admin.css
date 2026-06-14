@@ -1,0 +1,65 @@
+/*
+ * Ekler Admin — kurumsal marka katmanı (AdminJS üzerine bindirilir).
+ *
+ * AdminJS'in varsayılan "AdminJS" markasını ekler kimliğiyle değiştirir. Yalnızca
+ * marka öğelerini (kenar çubuğu kilidi, giriş sözcük markası) ekler display fontuyla
+ * biçimler; veri tabloları okunaklı kalsın diye gövde fontu AdminJS varsayılanında
+ * (Roboto) bırakılır. Servis: apps/admin/src/index.ts → express.static('/public').
+ */
+
+@font-face {
+  font-family: 'Ekler';
+  src: url('/public/fonts/Ekler.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --ekler-burgundy: #9e2035;
+  --ekler-burgundy-dark: #420011;
+  --ekler-ink: #0a0d0e;
+  --ekler-muted: #58696d;
+}
+
+/* —— Kenar çubuğu marka kilidi: mark + "ekler" (SidebarBranding override) —— */
+.ekler-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 24px 24px;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.ekler-brand__mark {
+  height: 30px;
+  width: auto;
+  display: block;
+}
+.ekler-brand__word {
+  font-family: 'Ekler', Roboto, sans-serif;
+  font-size: 26px;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  color: var(--ekler-ink);
+  transition: color 0.15s ease;
+}
+.ekler-brand:hover .ekler-brand__word {
+  color: var(--ekler-burgundy);
+}
+
+/* —— Üst bardaki boş AdminJS sürüm kutusunu kaldır (sürüm izi sızmasın) —— */
+[data-css='version'] {
+  display: none !important;
+}
+
+/* —— Giriş ekranı —— */
+.ekler-login__word {
+  font-family: 'Ekler', Roboto, sans-serif;
+  letter-spacing: 0.5px;
+}
+@media (max-width: 720px) {
+  .ekler-login__brand {
+    display: none !important;
+  }
+}

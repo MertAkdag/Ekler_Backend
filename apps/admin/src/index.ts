@@ -1,4 +1,6 @@
 import 'dotenv/config'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import AdminJS from 'adminjs'
 import AdminJSExpress from '@adminjs/express'
 import { Adapter, Database, Resource } from '@adminjs/sql'
@@ -66,7 +68,33 @@ const start = async (): Promise<void> => {
 
   const admin = new AdminJS({
     rootPath: '/admin',
-    branding: { companyName: 'Ekler Yönetim' },
+    // Kurumsal ekler kimliği. AdminJS varsayılan markası (logo.svg, "AdminJS"
+    // şirket adı, "made with love" rozeti) tamamen değiştirilir; bordo paleti +
+    // ekler mark/sözcük markası gelir. Görsel öğeler /public altından servis edilir
+    // (express.static, aşağıda), Login + SidebarBranding override'ları components.ts'te.
+    branding: {
+      companyName: 'ekler',
+      logo: '/public/ekler-mark-dark.png',
+      favicon: '/public/ekler-favicon.png',
+      withMadeWithLove: false,
+      theme: {
+        colors: {
+          primary100: '#9E2035',
+          primary80: '#B23A4D',
+          primary60: '#C66576',
+          primary40: '#DC97A2',
+          primary20: '#F2D6DB',
+          accent: '#9E2035',
+          love: '#9E2035',
+          filterBg: '#5A1320',
+          hoverBg: '#7A1C2E',
+        },
+      },
+    },
+    assets: {
+      // Marka fontu (@font-face Ekler) + .ekler-brand / .ekler-login stilleri.
+      styles: ['/public/ekler-admin.css'],
+    },
     componentLoader,
     dashboard: { component: Components.Dashboard, handler: dashboardHandler },
     pages: {
@@ -106,6 +134,10 @@ const start = async (): Promise<void> => {
   )
 
   const app = express()
+  // Marka varlıkları (logo, favicon, CSS, font) — AdminJS bunları kendisi servis
+  // etmez; branding/assets'teki /public/* yolları buradan karşılanır.
+  const __dirname = path.dirname(fileURLToPath(import.meta.url))
+  app.use('/public', express.static(path.join(__dirname, '../public')))
   app.use(admin.options.rootPath, router)
   app.listen(PORT, () => {
     // eslint-disable-next-line no-console
