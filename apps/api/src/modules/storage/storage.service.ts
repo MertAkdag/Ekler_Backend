@@ -1,5 +1,5 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common'
-import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import type { StorageBucket } from '@ekler/contracts'
 import { ENV, type Env } from '../../config/env'
@@ -87,5 +87,14 @@ export class StorageService implements OnModuleInit {
       signableHeaders: new Set(['content-type', 'content-length']),
     })
     return { url, key, expiresAt: new Date(Date.now() + UPLOAD_URL_TTL * 1000).toISOString() }
+  }
+
+  /**
+   * Delete an object. Used for content cleanup (e.g. a deleted confession's image).
+   * Callers treat this as best-effort — a failed cleanup must not fail the DB delete.
+   */
+  async deleteObject(bucket: StorageBucket, key: string): Promise<void> {
+    const cmd = new DeleteObjectCommand({ Bucket: this.bucketName(bucket), Key: key })
+    await this.requireClient().send(cmd)
   }
 }

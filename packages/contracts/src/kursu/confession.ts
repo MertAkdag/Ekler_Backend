@@ -128,3 +128,26 @@ export const createCommentResultSchema = z.object({
   comment: confessionCommentRowSchema.nullable().optional(),
 })
 export type CreateCommentResult = z.infer<typeof createCommentResultSchema>
+
+// ─── Detail + engagement (Wave B) ────────────────────────────────────────────
+
+/**
+ * GET /confessions/:id returns a single row in the EXACT feed-row shape (viewer
+ * like/bookmark/mine state + author display), so the RN detail path maps it the
+ * same way it maps a feed row. No separate schema needed — reuse ConfessionFeedRow.
+ */
+
+/** POST /confessions/preview — pre-flight moderation signal (preview_kursu_submission). */
+export const previewSubmissionBodySchema = z.object({
+  scope: z.enum(['kursu_post', 'kursu_comment']),
+  body: z.string().trim().min(1).max(500),
+})
+export type PreviewSubmissionBody = z.infer<typeof previewSubmissionBodySchema>
+
+export const previewSubmissionResultSchema = z.object({
+  decision: z.string(),
+  moderation_label: z.string().nullable(),
+  matched_categories: z.array(z.string()),
+  rollout_enabled: z.boolean(),
+})
+export type PreviewSubmissionResult = z.infer<typeof previewSubmissionResultSchema>

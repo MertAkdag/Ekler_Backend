@@ -10,12 +10,22 @@ import type {
   CreateConfessionBody,
   CreateConfessionResult,
   ListEnvelope,
+  PreviewSubmissionBody,
+  PreviewSubmissionResult,
 } from '@ekler/contracts'
 import { DRIZZLE, type Db } from '../../db/drizzle.module'
 import { ScopedRepository } from '../../db/scoped/scoped-repository'
-import { confessionComments, confessions, profiles, userSettings } from '../../db/schema'
+import {
+  confessionBookmarks,
+  confessionComments,
+  confessionLikes,
+  confessions,
+  profiles,
+  userSettings,
+} from '../../db/schema'
 import { encodeCursor } from '../../core/pagination/cursor'
 import { AppError } from '../../core/errors/app-error'
+import { StorageService } from '../storage/storage.service'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 
 /**
@@ -32,6 +42,7 @@ export class ConfessionsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly scope: ScopedRepository,
+    private readonly storage: StorageService,
   ) {}
 
   async feed(
@@ -293,6 +304,230 @@ export class ConfessionsService {
     }
   }
 
+  /**
+   * Single confession with the viewer's like/bookmark/mine state + author display —
+   * the same projection as one feed row, scoped to the caller's university (anti-K-1).
+   * Returns the EXACT ConfessionFeedRow shape so the RN detail path maps it like a feed row.
+   */
+  async detail(confessionId: string, user: AuthPrincipal): Promise<ConfessionFeedRow> {
+    const domain = this.scope.domain()
+    const uid = user.userId
+
+    const isMine = sql<boolean>`${confessions.authorId} = ${uid}::uuid`
+    const hasLiked = sql<boolean>`exists (
+      select 1 from public.confession_likes cl
+      where cl.confession_id = ${confessions.id} and cl.user_id = ${uid}::uuid
+    )`
+    const hasBookmarked = sql<boolean>`exists (
+      select 1 from public.confession_bookmarks cb
+      where cb.confession_id = ${confessions.id} and cb.user_id = ${uid}::uuid
+    )`
+    const authorName = sql<string>`case
+      when ${confessions.isAnonymous} then 'Anonim Öğrenci'
+      when ${confessions.authorId} = ${uid}::uuid then coalesce(${profiles.fullName}, ${profiles.username}, 'Öğrenci')
+      when coalesce(${userSettings.profileVisibilityEnabled}, true) then coalesce(${profiles.fullName}, ${profiles.username}, 'Öğrenci')
+      else 'Anonim Öğrenci'
+    end`
+    const authorUsername = sql<string | null>`case
+      when ${confessions.isAnonymous} then null
+      when ${confessions.authorId} = ${uid}::uuid then ${profiles.username}
+      when coalesce(${userSettings.profileVisibilityEnabled}, true) then ${profiles.username}
+      else null
+    end`
+    const authorAvatar = sql<string | null>`case
+      when ${confessions.isAnonymous} then null
+      when ${confessions.authorId} = ${uid}::uuid then ${profiles.avatarUrl}
+      when coalesce(${userSettings.profileVisibilityEnabled}, true) then ${profiles.avatarUrl}
+      else null
+    end`
+
+    const [row] = await this.db
+      .select({
+        id: confessions.id,
+        body: confessions.body,
+        category: confessions.category,
+        image_url: confessions.imageUrl,
+        is_anonymous: confessions.isAnonymous,
+        like_count: confessions.likeCount,
+        comment_count: confessions.commentCount,
+        is_flagged: confessions.isFlagged,
+        created_at: confessions.createdAt,
+        is_mine: isMine,
+        has_liked: hasLiked,
+        has_bookmarked: hasBookmarked,
+        author_name: authorName,
+        author_username: authorUsername,
+        author_avatar: authorAvatar,
+      })
+      .from(confessions)
+      .leftJoin(profiles, eq(profiles.id, confessions.authorId))
+      .leftJoin(userSettings, eq(userSettings.userId, confessions.authorId))
+      .where(
+        and(
+          this.scope.scopeFilter(confessions.universityDomain),
+          sql`${confessions.id} = ${confessionId}::uuid`,
+          isNull(confessions.hiddenAt),
+          eq(confessions.moderationStatus, 'published'),
+        ),
+      )
+      .limit(1)
+
+    if (!row) throw new AppError('NOT_FOUND', 'Gönderi bulunamadı.')
+    return row as ConfessionFeedRow
+  }
+
+  /** Like a confession (idempotent). like_count is maintained by a DB trigger. */
+  async like(confessionId: string, user: AuthPrincipal): Promise<void> {
+    await this.requireInScope(confessionId)
+    await this.assertCanReact(user.userId)
+    try {
+      await this.db
+        .insert(confessionLikes)
+        .values({ confessionId, userId: user.userId })
+    } catch (err) {
+      if (uniqueViolation(err)) return // already liked → idempotent
+      throw err
+    }
+  }
+
+  /** Remove a like (idempotent). */
+  async unlike(confessionId: string, user: AuthPrincipal): Promise<void> {
+    await this.requireInScope(confessionId)
+    await this.db
+      .delete(confessionLikes)
+      .where(
+        and(
+          eq(confessionLikes.confessionId, confessionId),
+          eq(confessionLikes.userId, user.userId),
+        ),
+      )
+  }
+
+  /** Bookmark a confession (idempotent). */
+  async bookmark(confessionId: string, user: AuthPrincipal): Promise<void> {
+    await this.requireInScope(confessionId)
+    try {
+      await this.db
+        .insert(confessionBookmarks)
+        .values({ confessionId, userId: user.userId })
+    } catch (err) {
+      if (uniqueViolation(err)) return
+      throw err
+    }
+  }
+
+  /** Remove a bookmark (idempotent). */
+  async unbookmark(confessionId: string, user: AuthPrincipal): Promise<void> {
+    await this.requireInScope(confessionId)
+    await this.db
+      .delete(confessionBookmarks)
+      .where(
+        and(
+          eq(confessionBookmarks.confessionId, confessionId),
+          eq(confessionBookmarks.userId, user.userId),
+        ),
+      )
+  }
+
+  /**
+   * Delete a confession — author or admin only (the RLS `confessions_delete_admin`
+   * policy ported to app code). Cascades to likes/bookmarks/comments via FK; the
+   * stored image is removed best-effort afterwards (a failed cleanup never fails the
+   * delete). Scoped to the caller's university (cross-uni id → 404).
+   */
+  async remove(confessionId: string, user: AuthPrincipal): Promise<void> {
+    const [row] = await this.db
+      .select({ authorId: confessions.authorId, imageUrl: confessions.imageUrl })
+      .from(confessions)
+      .where(
+        and(
+          this.scope.scopeFilter(confessions.universityDomain),
+          sql`${confessions.id} = ${confessionId}::uuid`,
+        ),
+      )
+      .limit(1)
+
+    if (!row) throw new AppError('NOT_FOUND', 'Gönderi bulunamadı.')
+    if (row.authorId !== user.userId && !user.isAdmin) {
+      throw new AppError('FORBIDDEN', 'Bu gönderiyi silme yetkin yok.')
+    }
+
+    await this.db
+      .delete(confessions)
+      .where(
+        and(
+          this.scope.scopeFilter(confessions.universityDomain),
+          sql`${confessions.id} = ${confessionId}::uuid`,
+        ),
+      )
+
+    const key = storageKeyOf(row.imageUrl)
+    if (key && this.storage.enabled) {
+      try {
+        await this.storage.deleteObject('confessions', key)
+      } catch {
+        // best-effort image cleanup — never fail the delete on storage errors
+      }
+    }
+  }
+
+  /**
+   * Pre-flight moderation signal (preview_kursu_submission) gated by the server-
+   * moderation rollout. Rollout off → always "allow" (the client falls back to the
+   * create-time decision). Mirrors the RN `previewKursuSubmission` contract.
+   */
+  async preview(
+    input: PreviewSubmissionBody,
+    user: AuthPrincipal,
+  ): Promise<PreviewSubmissionResult> {
+    const enabled = (await this.db.execute(
+      sql`select public.is_kursu_server_moderation_enabled(${user.userId}::uuid) as enabled`,
+    )) as unknown as { rows: Array<{ enabled: boolean }> }
+    if (!enabled.rows[0]?.enabled) {
+      return { decision: 'allow', moderation_label: null, matched_categories: [], rollout_enabled: false }
+    }
+
+    const res = (await this.db.execute(
+      sql`select public.preview_kursu_submission(${input.scope}, ${input.body}) as result`,
+    )) as unknown as {
+      rows: Array<{
+        result: { decision?: string; moderation_label?: string | null; matched_categories?: string[] }
+      }>
+    }
+    const r = res.rows[0]?.result ?? {}
+    return {
+      decision: r.decision ?? 'allow',
+      moderation_label: r.moderation_label ?? null,
+      matched_categories: Array.isArray(r.matched_categories) ? r.matched_categories : [],
+      rollout_enabled: true,
+    }
+  }
+
+  /** Fail-closed 404 if the confession isn't in the caller's university (anti-K-1). */
+  private async requireInScope(confessionId: string): Promise<void> {
+    const [found] = await this.db
+      .select({ id: confessions.id })
+      .from(confessions)
+      .where(
+        and(
+          this.scope.scopeFilter(confessions.universityDomain),
+          sql`${confessions.id} = ${confessionId}::uuid`,
+        ),
+      )
+      .limit(1)
+    if (!found) throw new AppError('NOT_FOUND', 'Gönderi bulunamadı.')
+  }
+
+  /** Ban/restriction gate for reactions (ported from the RLS like-insert policies). */
+  private async assertCanReact(uid: string): Promise<void> {
+    const res = (await this.db.execute(
+      sql`select public.is_user_banned(${uid}::uuid) as banned, public.is_user_restricted(${uid}::uuid) as restricted`,
+    )) as unknown as { rows: Array<{ banned: boolean; restricted: boolean }> }
+    const row = res.rows[0]
+    if (row?.banned) throw new AppError('USER_BANNED', 'Hesabın askıya alındığı için işlem yapamıyorsun.')
+    if (row?.restricted) throw new AppError('FORBIDDEN', 'Hesabın kısıtlı olduğu için işlem yapamıyorsun.')
+  }
+
   /** Map create_confession_v2 / _comment_v2 P0001 exceptions to canonical error codes. */
   private mapWriteError(err: unknown): AppError {
     if (err instanceof AppError) return err
@@ -319,4 +554,22 @@ export class ConfessionsService {
     }
     return new AppError('INTERNAL', 'İşlem tamamlanamadı.')
   }
+}
+
+/** True if the error is a Postgres unique-violation (drizzle wraps it on `.cause`). */
+function uniqueViolation(err: unknown): boolean {
+  const code =
+    (err as { cause?: { code?: string } })?.cause?.code ?? (err as { code?: string })?.code
+  return code === '23505'
+}
+
+/**
+ * Resolve a confession's stored image to an S3 object key, or null if none / not a
+ * Node-stored key. Node-created confessions store the bare object key in image_url;
+ * a legacy full URL (Supabase) can't be mapped to our bucket, so we skip cleanup.
+ */
+function storageKeyOf(imageUrl: string | null): string | null {
+  if (!imageUrl) return null
+  if (imageUrl.includes('://')) return null
+  return imageUrl
 }
