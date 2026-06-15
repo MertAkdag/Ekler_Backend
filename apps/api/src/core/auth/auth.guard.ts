@@ -2,14 +2,7 @@ import { CanActivate, ExecutionContext, Inject, Injectable } from '@nestjs/commo
 import { Reflector } from '@nestjs/core'
 import { ClsService } from 'nestjs-cls'
 import { sql } from 'drizzle-orm'
-import {
-  createRemoteJWKSet,
-  jwtVerify,
-  decodeProtectedHeader,
-  type JWTPayload,
-  type JWTVerifyGetKey,
-} from 'jose'
-import { ENV, type Env } from '../../config/env'
+import { type JWTPayload } from 'jose'
 import { DRIZZLE, type Db } from '../../db/drizzle.module'
 import { AppError } from '../errors/app-error'
 import type { AppClsStore, AuthPrincipal } from '../cls/cls-store'
@@ -17,14 +10,11 @@ import { IS_PUBLIC_KEY } from './public.decorator'
 import { TokenService } from '../../modules/auth/token.service'
 
 /**
- * Dual-accept auth bridge.
+ * Auth guard — own EdDSA OTP tokens only.
  *
- * During the migration window this verifies Supabase-issued JWTs against the
- * project JWKS (or the legacy HS256 secret). Phase 8 adds our own EdDSA tokens
- * behind the same guard — same verify surface, `tokenSource` flips.
- *
- * The verified `sub` is the user's id across ALL systems (same-UUID trick:
- * auth.users.id == profiles.id == JWT sub), so no id translation is ever needed.
+ * Verifies our own EdDSA-signed access tokens (TokenService pins alg:EdDSA /
+ * iss / aud). The verified `sub` is the user's id across ALL systems (same-UUID
+ * trick: auth.users.id == profiles.id == JWT sub), so no id translation is needed.
  *
  * After verifying, the principal — crucially `universityDomain` — is resolved
  * from `profiles` (the canonical domain, never the email/token) and written into
@@ -32,22 +22,12 @@ import { TokenService } from '../../modules/auth/token.service'
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
-  private jwks: JWTVerifyGetKey | null = null
-  private hsSecret: Uint8Array | null = null
-
   constructor(
-    @Inject(ENV) private readonly env: Env,
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly reflector: Reflector,
     private readonly cls: ClsService<AppClsStore>,
     private readonly tokens: TokenService,
-  ) {
-    if (env.SUPABASE_JWKS_URL) {
-      this.jwks = createRemoteJWKSet(new URL(env.SUPABASE_JWKS_URL))
-    } else if (env.SUPABASE_JWT_SECRET) {
-      this.hsSecret = new TextEncoder().encode(env.SUPABASE_JWT_SECRET)
-    }
-  }
+  ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
@@ -78,63 +58,22 @@ export class AuthGuard implements CanActivate {
 
   private async verify(
     token: string,
-  ): Promise<{ payload: JWTPayload; tokenSource: 'own' | 'supabase' }> {
-    // 1) Peek the header — UNTRUSTED, used only to route to the right verifier.
-    let kid: string | undefined
+  ): Promise<{ payload: JWTPayload; tokenSource: 'own' }> {
+    if (!this.tokens.enabled) {
+      throw new AppError('UNAUTHENTICATED', 'Auth is not configured.')
+    }
     try {
-      kid = decodeProtectedHeader(token).kid
-    } catch {
-      throw new AppError('UNAUTHENTICATED', 'Malformed token.')
-    }
-    const looksOwn = this.tokens.isOwnKid(kid)
-
-    // 2) Own EdDSA path. Try first when the kid is ours; also try when there is
-    //    no kid at all (own tokens always carry one, so this is cheap + safe).
-    if (this.tokens.enabled && (looksOwn || kid === undefined)) {
-      try {
-        const payload = await this.tokens.verifyAccess(token) // pinned alg:EdDSA, iss, aud
-        return { payload, tokenSource: 'own' }
-      } catch (err) {
-        if (err instanceof AppError) throw err
-        // If the kid was explicitly OURS, a failure here is FATAL — never fall
-        // back to the Supabase verifier for a token that claims to be ours.
-        if (looksOwn) throw new AppError('UNAUTHENTICATED', 'Invalid or expired token.')
-        // else: not ours → fall through to the legacy verifier.
-      }
-    }
-
-    // own_only kill switch: past the client cutover we stop honoring Supabase
-    // tokens entirely. Anything that didn't verify as ours above is rejected.
-    if (this.env.AUTH_MODE === 'own_only') {
+      const payload = await this.tokens.verifyAccess(token) // pinned alg:EdDSA, iss, aud
+      return { payload, tokenSource: 'own' }
+    } catch (err) {
+      if (err instanceof AppError) throw err
       throw new AppError('UNAUTHENTICATED', 'Invalid or expired token.')
     }
-
-    // 3) Legacy Supabase path (JWKS RS/ES, or HS256 secret). Each verifier pins
-    //    its own algorithm so an HS-signed token can never reach an asymmetric
-    //    key and vice-versa (alg-confusion mitigation).
-    try {
-      if (this.jwks) {
-        const { payload } = await jwtVerify(token, this.jwks, {
-          algorithms: ['RS256', 'ES256'],
-        })
-        return { payload, tokenSource: 'supabase' }
-      }
-      if (this.hsSecret) {
-        const { payload } = await jwtVerify(token, this.hsSecret, {
-          algorithms: ['HS256'],
-        })
-        return { payload, tokenSource: 'supabase' }
-      }
-    } catch {
-      throw new AppError('UNAUTHENTICATED', 'Invalid or expired token.')
-    }
-
-    throw new AppError('UNAUTHENTICATED', 'Invalid or expired token.')
   }
 
   private async resolvePrincipal(
     sub: string,
-    tokenSource: 'own' | 'supabase',
+    tokenSource: 'own',
   ): Promise<AuthPrincipal> {
     // Canonical domain comes from profiles, not the token. A verified token with
     // no profile yet (mid-onboarding) is valid but unscoped.

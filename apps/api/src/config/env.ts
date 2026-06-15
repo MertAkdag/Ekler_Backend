@@ -3,7 +3,7 @@ import { z } from 'zod'
 /**
  * Single zod-validated source of truth for process env. Fails fast at boot if a
  * required var is missing/malformed. Phase-gated vars are optional until their
- * phase lands (storage/redis/auth-keys), but DB + Supabase bridge are required.
+ * phase lands (storage/redis/auth-keys); DATABASE_URL is required.
  */
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -15,18 +15,7 @@ export const envSchema = z.object({
   DIRECT_DATABASE_URL: z.string().url().optional(),
   PG_POOL_MAX: z.coerce.number().int().positive().default(10),
 
-  // Auth bridge (Supabase JWT verification during the dual-accept window)
-  SUPABASE_URL: z.string().url().optional(),
-  SUPABASE_JWKS_URL: z.string().url().optional(),
-  SUPABASE_JWT_SECRET: z.string().optional(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
-
-  // Own auth (Phase 8)
-  //   AUTH_MODE — dual-accept toggle / server-side kill switch:
-  //     'dual'      → accept own EdDSA tokens AND legacy Supabase tokens (migration window).
-  //     'own_only'  → accept ONLY our own tokens (post-client-cutover hardening, pre-P9).
-  //   Rollback is flipping back to 'dual'; never flip to 'own_only' before the client cutover.
-  AUTH_MODE: z.enum(['dual', 'own_only']).default('dual'),
+  // Own auth (EdDSA OTP) — the only auth backend.
   AUTH_JWT_PRIVATE_KEY: z.string().optional(),
   AUTH_JWT_PUBLIC_KEY: z.string().optional(),
   AUTH_JWT_KID: z.string().default('ek-ed25519-1'),

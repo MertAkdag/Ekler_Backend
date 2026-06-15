@@ -12,7 +12,7 @@ export interface AuthPrincipal {
   isBanned: boolean // snapshot for UX; writes re-check via is_user_banned (SQL)
   isRestricted: boolean // snapshot; is_user_restricted (self-healing) is source of truth
   restrictionEndsAt: string | null
-  tokenSource: 'supabase' | 'own'
+  tokenSource: 'own'
 }
 
 export interface AppClsStore extends ClsStore {

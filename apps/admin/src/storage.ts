@@ -7,8 +7,8 @@
  * lived signed URLs so the sectioned show can render them. Public-bucket values
  * (already full http URLs, e.g. communities avatars) are left untouched.
  *
- * Storage moved from Supabase to MinIO (S3): URLs are now presigned against the
- * public STORAGE_ENDPOINT the API uses. The admin process shares the same STORAGE_* env.
+ * Storage is MinIO (S3): URLs are presigned against the public STORAGE_ENDPOINT
+ * the API uses. The admin process shares the same STORAGE_* env.
  */
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
@@ -53,12 +53,9 @@ const SIGNED_FIELDS: Record<string, SignedField[]> = {
 }
 
 /** Normalize a stored value to a storage path, or null when it's an external/public URL to leave as-is. */
-function toStoragePath(value: string, bucket: string): string | null {
+function toStoragePath(value: string): string | null {
   if (!/^https?:\/\//i.test(value)) return value.replace(/^\/+/, '') // already a path
-  const m = value.match(
-    new RegExp(`/storage/v1/(?:object|render/image)/(?:sign|public|authenticated)/${bucket}/(.+?)(?:\\?|$)`),
-  )
-  return m && m[1] ? decodeURIComponent(m[1]) : null
+  return null // external / public (full http) URL → leave as-is
 }
 
 /**
@@ -89,7 +86,7 @@ async function signRecordImages(resourceId: string, params?: Record<string, unkn
   for (const { field, bucket, transform } of fields) {
     const v = params[field]
     if (typeof v !== 'string' || v === '') continue
-    const path = toStoragePath(v, bucket)
+    const path = toStoragePath(v)
     if (!path) continue // external / public URL → leave as-is
     const doTransform = transform === 'always' || (transform === 'image-only' && isImageRow(params))
     const signed = await signUrl(bucket, path, doTransform)
