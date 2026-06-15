@@ -14,7 +14,7 @@ import type { AuthPrincipal } from '../../core/cls/cls-store'
 /**
  * City events feed — port of the RN direct `city_events` read.
  *
- * city_events is NOT a university-scoped table; it is CITY-scoped. The Supabase path
+ * city_events is NOT a university-scoped table; it is CITY-scoped. The legacy path
  * leaned on RLS (current_user_event_city_id()) for that scope. We resolve the city
  * EXPLICITLY from the caller's university_domain via the same DB resolver, then filter
  * `city_id` ourselves (the anti-K-1 control here is the city, not the university).

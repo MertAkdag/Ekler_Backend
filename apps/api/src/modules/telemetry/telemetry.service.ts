@@ -5,7 +5,7 @@ import { DRIZZLE, type Db } from '../../db/drizzle.module'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 
 /**
- * Client telemetry ingest — replaces the RN trackedFetch that POSTed to Supabase REST.
+ * Client telemetry ingest — replaces the RN trackedFetch that POSTed to the legacy REST API.
  * Inserts into the partitioned parent `app_telemetry_events` (routes to the right
  * partition by created_at). Best-effort: a failed insert must never surface to the UX,
  * so the controller swallows errors.

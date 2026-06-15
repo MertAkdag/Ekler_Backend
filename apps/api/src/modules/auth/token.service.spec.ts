@@ -73,7 +73,7 @@ describe('TokenService — sign/verify roundtrip', () => {
 
   it('recognizes its own kid and rejects foreign kids', () => {
     expect(svc.isOwnKid('ek-ed25519-1')).toBe(true)
-    expect(svc.isOwnKid('supabase')).toBe(false)
+    expect(svc.isOwnKid('foreign-kid')).toBe(false)
     expect(svc.isOwnKid(undefined)).toBe(false)
   })
 })

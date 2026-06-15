@@ -2,7 +2,7 @@ import { Throttle } from '@nestjs/throttler'
 import type { ThrottlerOptions } from '@nestjs/throttler'
 
 /**
- * Named rate limiters — mirror the existing Supabase DB rate-limit triggers
+ * Named rate limiters — mirror the legacy DB rate-limit triggers
  * (which stay as a backstop through Phase 3). ttl is in milliseconds (throttler v6).
  *
  * Only the lax `default` limiter is registered globally (see CoreModule) for

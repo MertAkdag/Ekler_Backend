@@ -13,7 +13,7 @@ import { AppError } from '../../core/errors/app-error'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 
 /**
- * Study sessions feed — Drizzle port of the Supabase RPC `get_sessions_feed`.
+ * Study sessions feed — Drizzle port of the legacy RPC `get_sessions_feed`.
  *
  * Anti-K-1: the RPC carried no tenancy filter (RLS-only). The port adds the
  * university scope EXPLICITLY via ScopedRepository. Projection, course/creator

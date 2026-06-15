@@ -29,7 +29,7 @@ import { StorageService } from '../storage/storage.service'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 
 /**
- * Kürsü read feed — a Drizzle port of the Supabase RPC `get_confessions_feed_v2`.
+ * Kürsü read feed — a Drizzle port of the legacy RPC `get_confessions_feed_v2`.
  *
  * The port is byte-for-byte faithful to the RPC's projection, filters, author-
  * visibility CASE, trending hot-score and `(created_at, id)` keyset — with ONE
@@ -566,7 +566,7 @@ function uniqueViolation(err: unknown): boolean {
 /**
  * Resolve a confession's stored image to an S3 object key, or null if none / not a
  * Node-stored key. Node-created confessions store the bare object key in image_url;
- * a legacy full URL (Supabase) can't be mapped to our bucket, so we skip cleanup.
+ * a legacy full URL can't be mapped to our bucket, so we skip cleanup.
  */
 function storageKeyOf(imageUrl: string | null): string | null {
   if (!imageUrl) return null

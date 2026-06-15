@@ -26,7 +26,8 @@ const normalizePem = (s: string): string => s.replace(/\\n/g, '\n')
 /**
  * EdDSA (Ed25519) signer/verifier for our own access tokens, plus opaque
  * refresh-token generation + hashing. Keys are imported ONCE at boot and cached.
- * If AUTH_JWT_* are absent, own-signing is disabled (Supabase bridge still works).
+ * If AUTH_JWT_* are absent, own-signing is disabled and the AuthGuard rejects all
+ * tokens (auth is unconfigured — these keys are required in any real deployment).
  *
  * Key rotation: we ALWAYS sign with the current key (`signingKid`), but verify
  * against a kid→key map that may also hold one previous (verify-only) key so
@@ -46,7 +47,7 @@ export class TokenService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     const priv = this.env.AUTH_JWT_PRIVATE_KEY
     const pub = this.env.AUTH_JWT_PUBLIC_KEY
-    if (!priv || !pub) return // own-auth not configured yet → dual-accept falls back to Supabase
+    if (!priv || !pub) return // own-auth keys not set → AuthGuard rejects all tokens
 
     this.signingKid = this.env.AUTH_JWT_KID
     this.signingKey = (await importPKCS8(normalizePem(priv), AUTH_ALG)) as KeyLike

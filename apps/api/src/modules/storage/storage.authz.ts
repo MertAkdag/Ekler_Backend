@@ -16,7 +16,7 @@ export function normalizePath(value: unknown): string | null {
 
 /**
  * Escape LIKE metacharacters (`\ % _`) so an attacker-supplied path can't act as a
- * wildcard inside a LIKE pattern. The original Supabase edge fn interpolated the raw
+ * wildcard inside a LIKE pattern. The original edge fn interpolated the raw
  * path into `ilike %${p}`, so a path containing `%`/`_` could broaden the match and
  * authorize someone else's image (IDOR). Use with `ESCAPE '\'`.
  */

@@ -5,7 +5,7 @@ import { map } from 'rxjs/operators'
 /**
  * Postgres renders timestamptz as space-separated text ("2026-06-15 10:00:00+00"); drizzle
  * (mode:'string') passes it through raw, but the RN client's Date parser (Hermes) can't
- * parse the space form → Invalid Date → NaN in time/duration math. PostgREST/Supabase
+ * parse the space form → Invalid Date → NaN in time/duration math. PostgREST
  * always returned ISO-8601, so we normalize timestamp-ish values to ISO here. Guarded by
  * BOTH a `_at` key suffix AND the exact PG-timestamp shape, so user content is never touched
  * (and already-ISO values, which use `T`, don't match → idempotent).

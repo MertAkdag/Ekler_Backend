@@ -248,7 +248,7 @@ export class MeService {
     return this.settings(user)
   }
 
-  /** Presence heartbeat (poll-on-focus replaces the Supabase realtime channel). */
+  /** Presence heartbeat (poll-on-focus replaces the legacy realtime channel). */
   async touchPresence(isOnline: boolean, user: AuthPrincipal): Promise<void> {
     await this.db
       .insert(userPresence)

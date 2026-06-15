@@ -20,7 +20,7 @@ import { StorageService } from '../storage/storage.service'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 
 /**
- * Notes feed — Drizzle port of the Supabase RPC `get_notes_feed`.
+ * Notes feed — Drizzle port of the legacy RPC `get_notes_feed`.
  *
  * The RPC carried NO tenancy filter (it leaned on RLS — a classic K-1 hotspot:
  * a SECURITY DEFINER feed that returns everything once RLS is gone). The port adds
