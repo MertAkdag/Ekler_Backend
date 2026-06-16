@@ -48,5 +48,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 #      university_departments availability, notes/sessions dept scope, year-0,
 #      crowdsource teardown. Idempotent.
 "$PGBIN/psql"     -p "$PORT" -U "$SUPER" -d "$DB" -v ON_ERROR_STOP=1 -f "$DIR/08-dept-redesign.sql"
+# 09 — per-university availability seed (YÖK Atlas) for the pilot universities.
+"$PGBIN/psql"     -p "$PORT" -U "$SUPER" -d "$DB" -v ON_ERROR_STOP=1 -f "$DIR/09-university-departments-seed.sql"
 
 echo "✓ standalone '$DB' ready on :$PORT (DATABASE_URL=postgresql://$SUPER@localhost:$PORT/$DB)"

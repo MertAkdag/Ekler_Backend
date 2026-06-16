@@ -30,10 +30,12 @@ shims that let it stand on its own:
   (`course_suggestions` + endorsements + `suggest_course` / `get_department_courses`
   / auto-approve). `courses` + `user_courses` tables are KEPT (empty, no v1 API) as
   the future admin-curated catalog and as valid `course_id`-tag FK targets.
-- **`09-university-departments-seed.sql.template`** — per-university availability
-  import template (fill from YÖK Atlas, lisans only; strip program-name suffixes to
-  the canonical `departments.name`). Until a university's rows exist, the catalog
-  falls back to the global canonical list, so onboarding never hard-blocks.
+- **`09-university-departments-seed.sql`** — per-university availability seed
+  (YÖK Atlas) for the pilot universities (Adana: ATÜ, Çukurova; Kahramanmaraş:
+  KSÜ, İstiklal), lisans + önlisans. Idempotent; resolves each university's domain
+  by name. Until a university has rows here, the catalog falls back to the global
+  canonical list, so onboarding never hard-blocks. Add more universities by
+  appending a section in the same pattern.
 
 ## Run
 
