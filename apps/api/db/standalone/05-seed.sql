@@ -46,5 +46,6 @@ insert into public.universities (id, name, domain, city_id) values
   (gen_random_uuid(), 'Selçuk Üniversitesi', 'ogr.selcuk.edu.tr', (select id from public.cities where name = 'Konya' limit 1)),
   (gen_random_uuid(), 'Erciyes Üniversitesi', 'ogr.erciyes.edu.tr', (select id from public.cities where name = 'Kayseri' limit 1)),
   (gen_random_uuid(), 'Karadeniz Teknik Üniversitesi', 'ogr.ktu.edu.tr', (select id from public.cities where name = 'Trabzon' limit 1)),
-  (gen_random_uuid(), 'Kahramanmaraş Sütçü İmam Üniversitesi', 'ogr.ksu.edu.tr', (select id from public.cities where name = 'Kahramanmaraş' limit 1))
+  (gen_random_uuid(), 'Kahramanmaraş Sütçü İmam Üniversitesi', 'ogr.ksu.edu.tr', (select id from public.cities where name = 'Kahramanmaraş' limit 1)),
+  (gen_random_uuid(), 'Kahramanmaraş İstiklal Üniversitesi', 'ogr.istiklal.edu.tr', (select id from public.cities where name = 'Kahramanmaraş' limit 1))
 on conflict (domain) do nothing;
