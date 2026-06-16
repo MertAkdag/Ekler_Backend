@@ -1,38 +1,17 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { and, asc, eq, ilike, or, sql } from 'drizzle-orm'
-import type {
-  Course,
-  Department,
-  Faculty,
-  SuggestCourseBody,
-  SuggestCourseResult,
-  UniversityByDomain,
-} from '@ekler/contracts'
+import { sql } from 'drizzle-orm'
+import type { Department, Faculty, UniversityByDomain } from '@ekler/contracts'
 import { DRIZZLE, type Db } from '../../db/drizzle.module'
-import { ScopedRepository } from '../../db/scoped/scoped-repository'
-import { courses } from '../../db/schema'
-import { escapeLike } from '../../core/sql/escape-like'
-import type { AuthPrincipal } from '../../core/cls/cls-store'
-
-/**
- * Sentinel university_domain marking a course as GLOBAL — visible in every
- * university's catalog, not just one. An admin adds a shared course (e.g. a
- * common elective) by setting its university_domain to this value.
- */
-const GLOBAL_COURSE_DOMAIN = '.edu.tr'
 
 @Injectable()
 export class CatalogService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly scope: ScopedRepository,
-  ) {}
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   /** by-domain: passthrough of get_university_with_sisters + bundled faculties (kills onboarding N+1). */
   async universityByDomain(domain: string): Promise<UniversityByDomain> {
-    const [uniRes, facRes] = await Promise.all([
+    const [uniRes, faculties] = await Promise.all([
       this.db.execute(sql`select public.get_university_with_sisters(${domain}) as j`),
-      this.db.execute(sql`select id, name from public.get_faculties() order by name`),
+      this.faculties(domain),
     ])
     const j = ((uniRes as unknown as { rows: Array<{ j: unknown }> }).rows[0]?.j ?? {}) as {
       university?: UniversityByDomain['university']
@@ -41,60 +20,51 @@ export class CatalogService {
     return {
       university: j.university ?? null,
       sister_universities: j.sister_universities ?? [],
-      faculties: (facRes as unknown as { rows: Faculty[] }).rows,
+      faculties,
     }
   }
 
-  /** All faculties (global catalog — get_faculties has no university filter). */
-  async faculties(): Promise<Faculty[]> {
+  /**
+   * Faculties available at a university (university_departments). When no domain
+   * is given, or no availability rows have been imported yet for it, falls back
+   * to the global canonical list so onboarding never hard-blocks.
+   */
+  async faculties(domain?: string): Promise<Faculty[]> {
+    if (domain) {
+      const res = await this.db.execute(sql`
+        select distinct f.id, f.name
+        from public.university_departments ud
+        join public.faculties f on f.id = ud.faculty_id
+        where ud.university_domain = ${domain}
+        order by f.name
+      `)
+      const rows = (res as unknown as { rows: Faculty[] }).rows
+      if (rows.length) return rows
+    }
     const res = await this.db.execute(sql`select id, name from public.get_faculties() order by name`)
     return (res as unknown as { rows: Faculty[] }).rows
   }
 
-  async departmentsByFaculty(facultyId: string): Promise<Department[]> {
+  /**
+   * Departments available at a university for a faculty, carrying per-university
+   * prep_mode + medium. Falls back to the global canonical list (prep_mode/medium
+   * null) when no domain or no availability rows exist for it.
+   */
+  async departmentsByFaculty(facultyId: string, domain?: string): Promise<Department[]> {
+    if (domain) {
+      const res = await this.db.execute(sql`
+        select d.id, d.name, d.faculty_id, d.duration_years, ud.prep_mode, ud.medium
+        from public.university_departments ud
+        join public.departments d on d.id = ud.department_id
+        where ud.university_domain = ${domain} and ud.faculty_id = ${facultyId}
+        order by d.name
+      `)
+      const rows = (res as unknown as { rows: Department[] }).rows
+      if (rows.length) return rows
+    }
     const res = await this.db.execute(
       sql`select id, name, faculty_id, duration_years from public.get_departments(${facultyId})`,
     )
     return (res as unknown as { rows: Department[] }).rows
-  }
-
-  /**
-   * Courses for the caller's university (domain from CLS via the scope chokepoint),
-   * id/code/name ordered by code — mirrors the RN useCourseCatalog fallback path.
-   * No department filter: the live DB has no courses.department_id.
-   */
-  async courses(search?: string): Promise<Course[]> {
-    const domain = this.scope.domain()
-    // The caller's own courses PLUS any global course (GLOBAL_COURSE_DOMAIN),
-    // which appears in every university's catalog.
-    const where = [
-      or(eq(courses.universityDomain, domain), eq(courses.universityDomain, GLOBAL_COURSE_DOMAIN))!,
-    ]
-    if (search) {
-      const term = `%${escapeLike(search)}%`
-      where.push(or(ilike(courses.code, term), ilike(courses.name, term))!)
-    }
-    return this.db
-      .select({ id: courses.id, code: courses.code, name: courses.name })
-      .from(courses)
-      .where(and(...where))
-      .orderBy(asc(courses.code))
-  }
-
-  /**
-   * Crowdsource a missing course (wraps suggest_course — insert/endorse, auto-approve at
-   * 3 via DB trigger). The RPC reads auth.uid(), so we set jwt-claims transaction-locally.
-   * university_domain is the caller's (anti-K-1), never client-supplied.
-   */
-  async suggestCourse(input: SuggestCourseBody, user: AuthPrincipal): Promise<SuggestCourseResult> {
-    const domain = this.scope.domain()
-    const claims = JSON.stringify({ sub: user.userId, role: 'authenticated' })
-    return this.db.transaction(async (tx) => {
-      await tx.execute(sql`select set_config('request.jwt.claims', ${claims}, true)`)
-      const res = (await tx.execute(
-        sql`select public.suggest_course(${input.code}, ${input.name}, ${input.department_id}::uuid, ${domain}) as result`,
-      )) as unknown as { rows: Array<{ result: SuggestCourseResult }> }
-      return res.rows[0]?.result ?? { status: 'rate_limited' }
-    })
   }
 }

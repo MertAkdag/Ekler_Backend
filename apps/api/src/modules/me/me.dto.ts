@@ -3,7 +3,6 @@ import {
   blockUserBodySchema,
   createAppealBodySchema,
   deviceTokenBodySchema,
-  enrollCoursesBodySchema,
   grantConsentsBodySchema,
   isBlockedQuerySchema,
   presenceBodySchema,
@@ -16,7 +15,6 @@ import {
 
 export class UpdateProfileBodyDto extends createZodDto(updateProfileBodySchema) {}
 export class UsernameAvailableQueryDto extends createZodDto(usernameAvailableQuerySchema) {}
-export class EnrollCoursesBodyDto extends createZodDto(enrollCoursesBodySchema) {}
 export class UpdateSettingsBodyDto extends createZodDto(updateSettingsBodySchema) {}
 export class PresenceBodyDto extends createZodDto(presenceBodySchema) {}
 export class DeviceTokenBodyDto extends createZodDto(deviceTokenBodySchema) {}

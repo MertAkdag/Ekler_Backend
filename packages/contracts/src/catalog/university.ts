@@ -30,6 +30,9 @@ export const departmentSchema = z.object({
   name: z.string(),
   faculty_id: z.string(),
   duration_years: z.number().int(),
+  // per-university availability fields (null when querying the global fallback list)
+  prep_mode: z.enum(['none', 'zorunlu', 'optional', 'sartli']).nullable().optional(),
+  medium: z.enum(['tr', 'en', 'mixed']).nullable().optional(),
 })
 
 export const universityByDomainSchema = z.object({
@@ -47,3 +50,14 @@ export type UniversityByDomain = z.infer<typeof universityByDomainSchema>
 export const byDomainQuerySchema = z.object({
   domain: z.string().trim().min(1),
 })
+
+/**
+ * Optional domain scope for /faculties and /faculties/:id/departments.
+ * When present, results are filtered to that university's availability
+ * (university_departments). When absent, the global canonical list is returned
+ * (back-compat / pre-import fallback so onboarding never hard-blocks).
+ */
+export const catalogScopeQuerySchema = z.object({
+  domain: z.string().trim().min(1).optional(),
+})
+export type CatalogScopeQuery = z.infer<typeof catalogScopeQuerySchema>

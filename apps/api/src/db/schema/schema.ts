@@ -543,10 +543,41 @@ export const departments = pgTable("departments", {
 	check("departments_duration_years_check", sql`(duration_years >= 2) AND (duration_years <= 7)`),
 ]);
 
+// Per-university availability of canonical faculties/departments (YÖK import).
+// prep_mode + medium are PER-UNIVERSITY (never on the canonical departments row).
+export const universityDepartments = pgTable("university_departments", {
+	universityDomain: text("university_domain").notNull(),
+	facultyId: uuid("faculty_id").notNull(),
+	departmentId: uuid("department_id").notNull(),
+	prepMode: text("prep_mode").default('none').notNull(), // none|zorunlu|optional|sartli
+	medium: text(), // null|tr|en|mixed (null = single track / unspecified)
+}, (table) => [
+	index("idx_university_departments_domain_faculty").using("btree", table.universityDomain.asc().nullsLast().op("text_ops"), table.facultyId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.universityDomain],
+			foreignColumns: [universities.domain],
+			name: "university_departments_university_domain_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.facultyId],
+			foreignColumns: [faculties.id],
+			name: "university_departments_faculty_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.departmentId],
+			foreignColumns: [departments.id],
+			name: "university_departments_department_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.universityDomain, table.departmentId], name: "university_departments_pkey" }),
+	check("university_departments_prep_mode_check", sql`prep_mode = ANY (ARRAY['none'::text, 'zorunlu'::text, 'optional'::text, 'sartli'::text])`),
+	check("university_departments_medium_check", sql`(medium IS NULL) OR (medium = ANY (ARRAY['tr'::text, 'en'::text, 'mixed'::text]))`),
+]);
+
 export const notes = pgTable("notes", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	authorId: uuid("author_id").notNull(),
-	courseId: uuid("course_id").notNull(),
+	courseId: uuid("course_id"), // nullable tag — UI dropped in v1, kept for future admin-curated catalog
+	departmentId: uuid("department_id"), // dept scope key (null = university-wide only, e.g. "Diğer" fallback)
 	universityDomain: text("university_domain").notNull(),
 	title: text().notNull(),
 	description: text(),
@@ -569,6 +600,7 @@ export const notes = pgTable("notes", {
 	index("idx_notes_author_id").using("btree", table.authorId.asc().nullsLast().op("uuid_ops")),
 	index("idx_notes_course").using("btree", table.courseId.asc().nullsLast().op("uuid_ops")),
 	index("idx_notes_course_id").using("btree", table.courseId.asc().nullsLast().op("uuid_ops")),
+	index("idx_notes_department").using("btree", table.departmentId.asc().nullsLast().op("uuid_ops")).where(sql`(department_id IS NOT NULL)`),
 	index("idx_notes_created_at").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("idx_notes_domain").using("btree", table.universityDomain.asc().nullsLast().op("text_ops")),
 	index("idx_notes_flagged").using("btree", table.isFlagged.asc().nullsLast().op("bool_ops")).where(sql`(is_flagged = true)`),
@@ -584,7 +616,12 @@ export const notes = pgTable("notes", {
 			columns: [table.courseId],
 			foreignColumns: [courses.id],
 			name: "notes_course_id_fkey"
-		}).onDelete("cascade"),
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.departmentId],
+			foreignColumns: [departments.id],
+			name: "notes_department_id_fkey"
+		}).onDelete("set null"),
 	foreignKey({
 			columns: [table.uploaderId],
 			foreignColumns: [usersInAuth.id],
@@ -653,7 +690,8 @@ export const userCourses = pgTable("user_courses", {
 export const studySessions = pgTable("study_sessions", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	creatorId: uuid("creator_id").notNull(),
-	courseId: uuid("course_id"),
+	courseId: uuid("course_id"), // nullable tag — kept for future admin-curated catalog
+	departmentId: uuid("department_id"), // dept scope key (null = university-wide only)
 	title: text(),
 	description: text(),
 	locationName: text("location_name").notNull(),
@@ -671,12 +709,18 @@ export const studySessions = pgTable("study_sessions", {
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("idx_sessions_course").using("btree", table.courseId.asc().nullsLast().op("uuid_ops")).where(sql`(status = 'active'::text)`),
+	index("idx_study_sessions_department").using("btree", table.departmentId.asc().nullsLast().op("uuid_ops")).where(sql`(department_id IS NOT NULL)`),
 	index("idx_sessions_university_status").using("btree", table.universityDomain.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops"), table.startsAt.desc().nullsFirst().op("text_ops")),
 	index("idx_study_sessions_title_trgm").using("gin", table.title.asc().nullsLast().op("gin_trgm_ops")),
 	foreignKey({
 			columns: [table.courseId],
 			foreignColumns: [courses.id],
 			name: "study_sessions_course_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.departmentId],
+			foreignColumns: [departments.id],
+			name: "study_sessions_department_id_fkey"
 		}).onDelete("set null"),
 	foreignKey({
 			columns: [table.creatorId],
@@ -1591,7 +1635,7 @@ export const profiles = pgTable("profiles", {
 	pgPolicy("profiles_select_own", { as: "permissive", for: "select", to: ["public"], using: sql`(auth.uid() = id)` }),
 	pgPolicy("profiles_update_own", { as: "permissive", for: "update", to: ["public"] }),
 	check("profiles_study_style_check", sql`(study_style IS NULL) OR (study_style = ANY (ARRAY['silent'::text, 'discussion'::text, 'music'::text]))`),
-	check("profiles_year_of_study_check", sql`(year_of_study IS NULL) OR ((year_of_study >= 1) AND (year_of_study <= 6))`),
+	check("profiles_year_of_study_check", sql`(year_of_study IS NULL) OR ((year_of_study >= 0) AND (year_of_study <= 6))`),
 ]);
 
 export const communityMembers = pgTable("community_members", {

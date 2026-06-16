@@ -2947,7 +2947,7 @@ CREATE TABLE public.profiles (
     is_restricted boolean DEFAULT false NOT NULL,
     restriction_ends_at timestamp with time zone,
     CONSTRAINT profiles_study_style_check CHECK (((study_style IS NULL) OR (study_style = ANY (ARRAY['silent'::text, 'discussion'::text, 'music'::text])))),
-    CONSTRAINT profiles_year_of_study_check CHECK (((year_of_study IS NULL) OR ((year_of_study >= 1) AND (year_of_study <= 6))))
+    CONSTRAINT profiles_year_of_study_check CHECK (((year_of_study IS NULL) OR ((year_of_study >= 0) AND (year_of_study <= 6))))
 );
 
 

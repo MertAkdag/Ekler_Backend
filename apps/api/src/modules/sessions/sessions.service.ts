@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
+// dept-scoped feed: course joins replaced by department joins
 import type {
   CreateSessionBody,
   CreateSessionResult,
@@ -8,7 +9,7 @@ import type {
 } from '@ekler/contracts'
 import { DRIZZLE, type Db } from '../../db/drizzle.module'
 import { ScopedRepository } from '../../db/scoped/scoped-repository'
-import { courses, profiles, sessionParticipants, studySessions, userSettings } from '../../db/schema'
+import { departments, profiles, sessionParticipants, studySessions, userSettings } from '../../db/schema'
 import { AppError } from '../../core/errors/app-error'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 
@@ -47,12 +48,14 @@ export class SessionsService {
       inArray(studySessions.status, ['active', 'full']),
       sql`${studySessions.startsAt} >= (now() - interval '24 hours')`,
       sql`${studySessions.endsAt} >= now()`,
-      // my_courses: restrict to the caller's enrolled course ids (empty → no rows, like the RPC's any('{}'))
-      q.filter === 'my_courses'
-        ? q.course_ids.length > 0
-          ? inArray(studySessions.courseId, q.course_ids)
+      // my_department: restrict to the caller's department (no department_id → no rows)
+      q.filter === 'my_department'
+        ? q.department_id
+          ? sql`${studySessions.departmentId} = ${q.department_id}::uuid`
           : sql`false`
         : undefined,
+      // year filter = creator's class (profiles join below)
+      q.year_of_study != null ? sql`${profiles.yearOfStudy} = ${q.year_of_study}` : undefined,
     ]
 
     const rows = await this.db
@@ -70,13 +73,13 @@ export class SessionsService {
         participant_count: studySessions.participantCount,
         status: studySessions.status,
         created_at: studySessions.createdAt,
-        course_code: sql<string>`coalesce(${courses.code}, '—')`,
-        course_name: sql<string>`coalesce(${courses.name}, 'Ders belirtilmemiş')`,
+        department_id: studySessions.departmentId,
+        department_name: sql<string>`coalesce(${departments.name}, 'Bölüm belirtilmemiş')`,
         creator_name: creatorName,
         has_joined: hasJoined,
       })
       .from(studySessions)
-      .leftJoin(courses, eq(courses.id, studySessions.courseId))
+      .leftJoin(departments, eq(departments.id, studySessions.departmentId))
       .leftJoin(profiles, eq(profiles.id, studySessions.creatorId))
       .leftJoin(userSettings, eq(userSettings.userId, studySessions.creatorId))
       .where(and(...where))
@@ -96,12 +99,21 @@ export class SessionsService {
     const domain = this.scope.domain()
     const uid = user.userId
 
+    // Stamp the session's department from the creator's profile (null = "Diğer"
+    // fallback users → university-wide only). courseId stays a nullable tag.
+    const [creator] = await this.db
+      .select({ departmentId: profiles.departmentId })
+      .from(profiles)
+      .where(eq(profiles.id, uid))
+      .limit(1)
+
     return this.db.transaction(async (tx) => {
       const inserted = await tx
         .insert(studySessions)
         .values({
           creatorId: uid,
           courseId: input.courseId,
+          departmentId: creator?.departmentId ?? null,
           title: input.title,
           description: input.description,
           locationName: input.locationName,

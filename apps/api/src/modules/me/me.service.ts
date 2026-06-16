@@ -6,14 +6,12 @@ import type {
   BlockedUser,
   Consent,
   CreateAppealBody,
-  EnrollCoursesBody,
   IsBlockedResult,
   ProfileDetail,
   RequiredConsents,
   Sanction,
   UpdateProfileBody,
   UpdateSettingsBody,
-  UserCourse,
   UserSettings,
   UserStats,
   VisibleUser,
@@ -26,7 +24,6 @@ import type { AuthPrincipal } from '../../core/cls/cls-store'
 import {
   confessionComments,
   confessions,
-  courses,
   deviceTokens,
   moderationAppeals,
   notes,
@@ -153,7 +150,7 @@ export class MeService {
     return { available: !row || row.id === user.userId }
   }
 
-  /** Profile header counts (sessions created, sessions joined, distinct enrolled courses). */
+  /** Profile header counts (sessions created, sessions joined). */
   async stats(user: AuthPrincipal): Promise<UserStats> {
     const uid = user.userId
     const [created] = await this.db
@@ -164,57 +161,10 @@ export class MeService {
       .select({ n: sql<number>`count(*)::int` })
       .from(sessionParticipants)
       .where(and(eq(sessionParticipants.userId, uid), eq(sessionParticipants.status, 'joined')))
-    const [courseCount] = await this.db
-      .select({ n: sql<number>`count(distinct ${userCourses.courseId})::int` })
-      .from(userCourses)
-      .where(eq(userCourses.userId, uid))
     return {
       totalSessions: created?.n ?? 0,
       joinedSessions: joined?.n ?? 0,
-      activeCourses: courseCount?.n ?? 0,
     }
-  }
-
-  /** Enrolled courses, deduped by course_id (one row per course across semesters). */
-  async courses(user: AuthPrincipal): Promise<UserCourse[]> {
-    const rows = await this.db
-      .select({ course_id: userCourses.courseId, code: courses.code, name: courses.name })
-      .from(userCourses)
-      .innerJoin(courses, eq(courses.id, userCourses.courseId))
-      .where(eq(userCourses.userId, user.userId))
-
-    const seen = new Set<string>()
-    const out: UserCourse[] = []
-    for (const r of rows) {
-      if (seen.has(r.course_id)) continue
-      seen.add(r.course_id)
-      out.push(r)
-    }
-    return out
-  }
-
-  /** Bulk enroll — upsert on (user_id, course_id, semester); updates instructor on conflict. */
-  async enrollCourses(body: EnrollCoursesBody, user: AuthPrincipal): Promise<void> {
-    const values = body.courses.map((c) => ({
-      userId: user.userId,
-      courseId: c.course_id,
-      semester: c.semester,
-      instructor: c.instructor ?? null,
-    }))
-    await this.db
-      .insert(userCourses)
-      .values(values)
-      .onConflictDoUpdate({
-        target: [userCourses.userId, userCourses.courseId, userCourses.semester],
-        set: { instructor: sql`excluded.instructor` },
-      })
-  }
-
-  /** Drop a course from the caller's enrollment (all semesters). */
-  async deleteCourse(courseId: string, user: AuthPrincipal): Promise<void> {
-    await this.db
-      .delete(userCourses)
-      .where(and(eq(userCourses.userId, user.userId), eq(userCourses.courseId, courseId)))
   }
 
   /** Current settings; seeds the row with defaults on first read (mirrors RN seed-on-load). */

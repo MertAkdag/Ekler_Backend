@@ -8,7 +8,6 @@ import type {
   ProfileDetail,
   RequiredConsents,
   Sanction,
-  UserCourse,
   UserSettings,
   UserStats,
   VisibleUser,
@@ -20,7 +19,6 @@ import {
   BlockUserBodyDto,
   CreateAppealBodyDto,
   DeviceTokenBodyDto,
-  EnrollCoursesBodyDto,
   GrantConsentsBodyDto,
   IsBlockedQueryDto,
   PresenceBodyDto,
@@ -63,30 +61,6 @@ export class MeController {
   @Get('stats')
   stats(@CurrentUser() user: AuthPrincipal): Promise<UserStats> {
     return this.me.stats(user)
-  }
-
-  // ── Courses ──────────────────────────────────────────────────────────────
-  @Get('courses')
-  courses(@CurrentUser() user: AuthPrincipal): Promise<UserCourse[]> {
-    return this.me.courses(user)
-  }
-
-  @Post('courses')
-  @HttpCode(204)
-  enrollCourses(
-    @CurrentUser() user: AuthPrincipal,
-    @Body() body: EnrollCoursesBodyDto,
-  ): Promise<void> {
-    return this.me.enrollCourses(body, user)
-  }
-
-  @Delete('courses/:courseId')
-  @HttpCode(204)
-  deleteCourse(
-    @CurrentUser() user: AuthPrincipal,
-    @Param('courseId') courseId: string,
-  ): Promise<void> {
-    return this.me.deleteCourse(courseId, user)
   }
 
   // ── Settings ─────────────────────────────────────────────────────────────

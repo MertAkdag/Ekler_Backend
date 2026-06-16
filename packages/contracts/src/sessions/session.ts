@@ -6,26 +6,23 @@ import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../pagination'
  * Not cursor-paginated (single capped load, like the RN radar screen). `course_ids`
  * arrives as a comma-separated list of uuids (only meaningful for filter=my_courses).
  */
-export const sessionFilterSchema = z.enum(['all', 'my_courses'])
+export const sessionFilterSchema = z.enum(['all', 'my_department'])
 export type SessionFilter = z.infer<typeof sessionFilterSchema>
 
 export const sessionFeedQuerySchema = z.object({
   filter: sessionFilterSchema.default('all'),
-  // accepts "uuid,uuid" (RN) or an array (repeated param); empty/absent → []
-  course_ids: z.preprocess(
-    (v) =>
-      typeof v === 'string'
-        ? v.split(',').filter(Boolean)
-        : Array.isArray(v)
-          ? v
-          : [],
-    z.array(z.string().uuid()).default([]),
-  ),
+  // my_department: caller passes own department_id. year_of_study filters by creator's class.
+  department_id: z.string().uuid().optional(),
+  year_of_study: z.coerce.number().int().min(0).max(6).optional(),
   limit: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
 })
 export type SessionFeedQuery = z.infer<typeof sessionFeedQuerySchema>
 
-/** Create a study session. university_domain + status are server-set; creator auto-joins. */
+/**
+ * Create a study session. university_domain + status + department_id are server-set
+ * (department stamped from the creator's profile); creator auto-joins.
+ * courseId stays as an optional nullable tag (UI dropped in v1; kept for future).
+ */
 export const createSessionBodySchema = z.object({
   courseId: z.string().uuid().nullable().default(null),
   title: z.string().max(200).nullable().default(null),
@@ -55,8 +52,8 @@ export const sessionFeedRowSchema = z.object({
   participant_count: z.number(),
   status: z.string(),
   created_at: z.string(),
-  course_code: z.string(),
-  course_name: z.string(),
+  department_id: z.string().nullable(),
+  department_name: z.string(),
   creator_name: z.string(),
   has_joined: z.boolean(),
 })

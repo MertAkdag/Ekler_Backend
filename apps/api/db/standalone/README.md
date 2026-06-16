@@ -20,6 +20,20 @@ shims that let it stand on its own:
 - **`02-schema.sql`** — the public schema: 62 tables, 243 functions (incl. the
   moderation engine `evaluate_moderation_rules` / `create_confession_v2` / …),
   15 triggers, 199 indexes, 124 RLS policies.
+- **`08-dept-redesign.sql`** — department-first redesign delta (2026-06-16),
+  **idempotent**, doubles as the **live-prod forward migration** (apply once on the
+  running DB). Relaxes `year_of_study` CHECK to `>= 0` (Hazırlık = year 0); creates
+  `university_departments` (per-university availability of canonical
+  faculties/departments + per-uni `prep_mode` + `medium`); makes `notes.course_id`
+  a nullable tag and adds `notes.department_id` / `study_sessions.department_id`
+  (notes/Radar now scope by department); tears down the crowdsource catalog
+  (`course_suggestions` + endorsements + `suggest_course` / `get_department_courses`
+  / auto-approve). `courses` + `user_courses` tables are KEPT (empty, no v1 API) as
+  the future admin-curated catalog and as valid `course_id`-tag FK targets.
+- **`09-university-departments-seed.sql.template`** — per-university availability
+  import template (fill from YÖK Atlas, lisans only; strip program-name suffixes to
+  the canonical `departments.name`). Until a university's rows exist, the catalog
+  falls back to the global canonical list, so onboarding never hard-blocks.
 
 ## Run
 

@@ -6,7 +6,6 @@ import {
   communityRequestActions,
   contentActions,
   contentBulkActions,
-  courseSuggestionActions,
   eventSubmissionActions,
   noteActions,
   opsQueueActions,
@@ -161,7 +160,7 @@ const RESOURCES: Cfg[] = [
     table: 'notes',
     nav: 'İçerik',
     sort: { sortBy: 'created_at', direction: 'desc' },
-    list: ['title', 'course_id', 'author_id', 'vote_score', 'is_hidden', 'is_flagged', 'created_at'],
+    list: ['title', 'department_id', 'author_id', 'vote_score', 'is_hidden', 'is_flagged', 'created_at'],
     badges: { is_hidden: 'bool_hidden', is_flagged: 'bool_flagged' },
   },
   {
@@ -183,7 +182,7 @@ const RESOURCES: Cfg[] = [
     table: 'study_sessions',
     nav: 'İçerik',
     sort: { sortBy: 'starts_at', direction: 'desc' },
-    list: ['title', 'course_id', 'creator_id', 'status', 'starts_at', 'participant_count'],
+    list: ['title', 'department_id', 'creator_id', 'status', 'starts_at', 'participant_count'],
     badges: { status: 'session_status' },
   },
   {
@@ -285,14 +284,6 @@ const RESOURCES: Cfg[] = [
     list: ['code', 'name', 'faculty', 'university_domain', 'credits'],
   },
   {
-    table: 'course_suggestions',
-    nav: 'Katalog',
-    // Most-endorsed pending suggestions first (the ones worth approving).
-    sort: { sortBy: 'endorsement_count', direction: 'desc' },
-    list: ['code', 'name', 'department_id', 'university_domain', 'endorsement_count', 'status', 'created_at'],
-    badges: { status: 'submission_status' },
-  },
-  {
     table: 'faculties',
     nav: 'Katalog',
     sort: { sortBy: 'name', direction: 'asc' },
@@ -357,7 +348,6 @@ const ACTIONS_BY_TABLE: Record<string, ResourceOptions['actions']> = {
   notes: noteActions(),
   reports: { ...reportActions(), ...reportBulkActions() },
   communities: communityActions(),
-  course_suggestions: courseSuggestionActions(),
   event_submissions: eventSubmissionActions(),
   community_requests: communityRequestActions(),
   moderation_appeals: appealActions(),

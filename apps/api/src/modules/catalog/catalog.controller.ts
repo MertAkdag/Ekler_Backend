@@ -1,16 +1,8 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common'
-import type {
-  Course,
-  Department,
-  Faculty,
-  SuggestCourseResult,
-  UniversityByDomain,
-} from '@ekler/contracts'
-import { CurrentUser, Public } from '../../core/auth/public.decorator'
-import type { AuthPrincipal } from '../../core/cls/cls-store'
-import { RateLimit } from '../../core/throttler/rate-limits'
+import { Controller, Get, Param, Query } from '@nestjs/common'
+import type { Department, Faculty, UniversityByDomain } from '@ekler/contracts'
+import { Public } from '../../core/auth/public.decorator'
 import { CatalogService } from './catalog.service'
-import { ByDomainQueryDto, CourseListQueryDto, SuggestCourseBodyDto } from './catalog.dto'
+import { ByDomainQueryDto, CatalogScopeQueryDto } from './catalog.dto'
 
 @Controller()
 export class CatalogController {
@@ -23,31 +15,23 @@ export class CatalogController {
     return this.catalog.universityByDomain(q.domain)
   }
 
+  /**
+   * Faculties available at a university (university_departments). With no
+   * ?domain= (or no availability rows imported yet) falls back to the global
+   * canonical list so onboarding never hard-blocks.
+   */
   @Public()
   @Get('faculties')
-  faculties(): Promise<Faculty[]> {
-    return this.catalog.faculties()
+  faculties(@Query() q: CatalogScopeQueryDto): Promise<Faculty[]> {
+    return this.catalog.faculties(q.domain)
   }
 
   @Public()
   @Get('faculties/:id/departments')
-  departments(@Param('id') facultyId: string): Promise<Department[]> {
-    return this.catalog.departmentsByFaculty(facultyId)
-  }
-
-  /** Authenticated — scoped to the caller's university_domain. */
-  @Get('courses')
-  courses(@Query() q: CourseListQueryDto): Promise<Course[]> {
-    return this.catalog.courses(q.search)
-  }
-
-  /** Crowdsource a missing course (suggest_course; auto-approve at 3 endorsements). */
-  @Post('courses/suggest')
-  @RateLimit('courseSuggest')
-  suggestCourse(
-    @CurrentUser() user: AuthPrincipal,
-    @Body() body: SuggestCourseBodyDto,
-  ): Promise<SuggestCourseResult> {
-    return this.catalog.suggestCourse(body, user)
+  departments(
+    @Param('id') facultyId: string,
+    @Query() q: CatalogScopeQueryDto,
+  ): Promise<Department[]> {
+    return this.catalog.departmentsByFaculty(facultyId, q.domain)
   }
 }

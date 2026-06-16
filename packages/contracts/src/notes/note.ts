@@ -13,7 +13,10 @@ export const noteSortSchema = z.enum(['recent', 'popular'])
 export type NoteSort = z.infer<typeof noteSortSchema>
 
 export const noteFeedQuerySchema = z.object({
-  course_id: z.string().uuid().optional(),
+  // dept scope: present = "my department" (caller passes own department_id),
+  // absent = whole university. year_of_study filters by the author's class.
+  department_id: z.string().uuid().optional(),
+  year_of_study: z.coerce.number().int().min(0).max(6).optional(),
   sort: noteSortSchema.default('recent'),
   limit: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
 })
@@ -29,7 +32,7 @@ export type NoteVoteBody = z.infer<typeof noteVoteBodySchema>
 export const noteFeedRowSchema = z.object({
   id: z.string(),
   author_id: z.string(),
-  course_id: z.string(),
+  department_id: z.string().nullable(),
   title: z.string(),
   description: z.string().nullable(),
   file_url: z.string(),
@@ -40,8 +43,7 @@ export const noteFeedRowSchema = z.object({
   comment_count: z.number().nullable(),
   created_at: z.string(),
   is_flagged: z.boolean(),
-  course_code: z.string(),
-  course_name: z.string(),
+  department_name: z.string(),
   author_name: z.string(),
   user_vote: z.string().nullable(), // 'up' | 'down' | null
   is_mine: z.boolean(),
@@ -50,9 +52,12 @@ export type NoteFeedRow = z.infer<typeof noteFeedRowSchema>
 
 // ─── Write surface (Wave C) ──────────────────────────────────────────────────
 
-/** POST /notes — create a note record (the file is uploaded to storage first; this carries its key). */
+/**
+ * POST /notes — create a note record (the file is uploaded to storage first; this
+ * carries its key). department_id is NOT accepted from the client: the server
+ * stamps it from the author's profile (anti-spoof, same pattern as university_domain).
+ */
 export const createNoteBodySchema = z.object({
-  course_id: z.string().uuid(),
   title: z.string().trim().min(2).max(120),
   description: z.string().trim().max(300).nullable().optional(),
   file_url: z.string().min(1), // storage object key

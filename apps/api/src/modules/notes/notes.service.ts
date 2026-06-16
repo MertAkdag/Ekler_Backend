@@ -13,7 +13,7 @@ import type {
 } from '@ekler/contracts'
 import { DRIZZLE, type Db } from '../../db/drizzle.module'
 import { ScopedRepository } from '../../db/scoped/scoped-repository'
-import { courses, noteComments, noteVotes, notes, profiles, userSettings } from '../../db/schema'
+import { departments, noteComments, noteVotes, notes, profiles, userSettings } from '../../db/schema'
 import { encodeCursor } from '../../core/pagination/cursor'
 import { AppError } from '../../core/errors/app-error'
 import { StorageService } from '../storage/storage.service'
@@ -50,7 +50,10 @@ export class NotesService {
       this.scope.scopeFilter(notes.universityDomain),
       eq(notes.isFlagged, false),
       eq(notes.isHidden, false),
-      q.course_id ? sql`${notes.courseId} = ${q.course_id}::uuid` : undefined,
+      // dept scope: present = "my department", absent = whole university
+      q.department_id ? sql`${notes.departmentId} = ${q.department_id}::uuid` : undefined,
+      // year filter = author's class (profiles join below)
+      q.year_of_study != null ? sql`${profiles.yearOfStudy} = ${q.year_of_study}` : undefined,
     ]
 
     // popular → vote_score desc then recency; recent → recency. (RPC tiebreak is
@@ -64,7 +67,7 @@ export class NotesService {
       .select({
         id: notes.id,
         author_id: notes.authorId,
-        course_id: notes.courseId,
+        department_id: notes.departmentId,
         title: notes.title,
         description: notes.description,
         file_url: notes.fileUrl,
@@ -75,14 +78,13 @@ export class NotesService {
         comment_count: notes.commentCount,
         created_at: notes.createdAt,
         is_flagged: notes.isFlagged,
-        course_code: sql<string>`coalesce(${courses.code}, '—')`,
-        course_name: sql<string>`coalesce(${courses.name}, 'Ders belirtilmemiş')`,
+        department_name: sql<string>`coalesce(${departments.name}, 'Bölüm belirtilmemiş')`,
         author_name: authorName,
         user_vote: noteVotes.direction,
         is_mine: sql<boolean>`${notes.authorId} = ${uid}::uuid`,
       })
       .from(notes)
-      .leftJoin(courses, eq(courses.id, notes.courseId))
+      .leftJoin(departments, eq(departments.id, notes.departmentId))
       .leftJoin(profiles, eq(profiles.id, notes.authorId))
       .leftJoin(userSettings, eq(userSettings.userId, notes.authorId))
       .leftJoin(noteVotes, and(eq(noteVotes.noteId, notes.id), sql`${noteVotes.userId} = ${uid}::uuid`))
@@ -131,12 +133,19 @@ export class NotesService {
   async create(input: CreateNoteBody, user: AuthPrincipal): Promise<CreateNoteResult> {
     const domain = this.scope.domain()
     await this.assertNotBanned(user.userId)
+    // Stamp the note's department from the author's profile (null = "Diğer"
+    // fallback users → university-wide only). Never trust the client for scope.
+    const [author] = await this.db
+      .select({ departmentId: profiles.departmentId })
+      .from(profiles)
+      .where(eq(profiles.id, user.userId))
+      .limit(1)
     const [row] = await this.db
       .insert(notes)
       .values({
         authorId: user.userId,
         uploaderId: user.userId,
-        courseId: input.course_id,
+        departmentId: author?.departmentId ?? null,
         universityDomain: domain,
         title: input.title,
         description: input.description ?? null,

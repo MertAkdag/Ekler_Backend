@@ -56,7 +56,7 @@ export const updateProfileBodySchema = z
     department_id: z.string().uuid().nullable(),
     study_style: z.enum(['silent', 'discussion', 'music']).nullable(),
     preferred_location: z.string().nullable(),
-    year_of_study: z.number().int().min(1).max(6).nullable(),
+    year_of_study: z.number().int().min(0).max(6).nullable(), // 0 = Hazırlık
     university_name: z.string().nullable(),
   })
   .partial()
@@ -74,32 +74,8 @@ export type UsernameAvailable = z.infer<typeof usernameAvailableSchema>
 export const userStatsSchema = z.object({
   totalSessions: z.number().int(),
   joinedSessions: z.number().int(),
-  activeCourses: z.number().int(),
 })
 export type UserStats = z.infer<typeof userStatsSchema>
-
-/** GET /v1/me/courses — deduped enrolled courses (RN `UserCourse`). */
-export const userCourseSchema = z.object({
-  course_id: z.string(),
-  code: z.string(),
-  name: z.string(),
-})
-export type UserCourse = z.infer<typeof userCourseSchema>
-
-/** POST /v1/me/courses — bulk enroll (upsert on user_id,course_id,semester). */
-export const enrollCoursesBodySchema = z.object({
-  courses: z
-    .array(
-      z.object({
-        course_id: z.string().uuid(),
-        semester: z.string().min(1).max(40),
-        instructor: z.string().max(120).nullable().optional(),
-      }),
-    )
-    .min(1)
-    .max(50),
-})
-export type EnrollCoursesBody = z.infer<typeof enrollCoursesBodySchema>
 
 /** GET/POST /v1/me/settings — the six synced settings (RN `UserSettings`). */
 export const userSettingsSchema = z.object({
