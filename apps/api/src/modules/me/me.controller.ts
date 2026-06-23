@@ -12,7 +12,7 @@ import type {
   UserStats,
   VisibleUser,
 } from '@ekler/contracts'
-import { CurrentUser } from '../../core/auth/public.decorator'
+import { AllowBanned, CurrentUser } from '../../core/auth/public.decorator'
 import type { AuthPrincipal } from '../../core/cls/cls-store'
 import { MeService } from './me.service'
 import {
@@ -78,6 +78,7 @@ export class MeController {
   }
 
   // ── Presence ─────────────────────────────────────────────────────────────
+  @AllowBanned() // housekeeping heartbeat — harmless for a banned user
   @Post('presence')
   @HttpCode(204)
   presence(@CurrentUser() user: AuthPrincipal, @Body() body: PresenceBodyDto): Promise<void> {
@@ -85,6 +86,7 @@ export class MeController {
   }
 
   // ── Device tokens (push delivery deferred; storage only) ─────────────────
+  @AllowBanned() // push registration housekeeping; not content
   @Post('device-tokens')
   @HttpCode(204)
   registerDeviceToken(
@@ -94,6 +96,7 @@ export class MeController {
     return this.me.registerDeviceToken(body.expo_push_token, body.platform, user)
   }
 
+  @AllowBanned() // de-registration housekeeping
   @Delete('device-tokens')
   @HttpCode(204)
   deleteDeviceToken(
@@ -114,6 +117,7 @@ export class MeController {
     return this.me.requiredConsents()
   }
 
+  @AllowBanned() // KVKK/GDPR legal compliance — must persist regardless of ban
   @Post('consents')
   @HttpCode(204)
   grantConsents(
@@ -139,12 +143,14 @@ export class MeController {
     return this.me.notifications(user)
   }
 
+  @AllowBanned() // own-inbox housekeeping; banned users still read ban/appeal notices
   @Patch('notifications')
   @HttpCode(204)
   markAllNotificationsRead(@CurrentUser() user: AuthPrincipal): Promise<void> {
     return this.me.markAllNotificationsRead(user)
   }
 
+  @AllowBanned() // own-inbox housekeeping
   @Patch('notifications/:id')
   @HttpCode(204)
   markNotificationRead(
@@ -154,12 +160,14 @@ export class MeController {
     return this.me.markNotificationRead(id, user)
   }
 
+  @AllowBanned() // own-inbox housekeeping
   @Delete('notifications')
   @HttpCode(204)
   clearNotifications(@CurrentUser() user: AuthPrincipal): Promise<void> {
     return this.me.clearNotifications(user)
   }
 
+  @AllowBanned() // own-inbox housekeeping
   @Delete('notifications/:id')
   @HttpCode(204)
   deleteNotification(@CurrentUser() user: AuthPrincipal, @Param('id') id: string): Promise<void> {
@@ -180,6 +188,7 @@ export class MeController {
     return this.me.latestAppeal(user, sanctionId)
   }
 
+  @AllowBanned() // CRITICAL — a banned user must be able to appeal the ban itself
   @Post('appeals')
   @HttpCode(204)
   createAppeal(
@@ -212,12 +221,14 @@ export class MeController {
     return this.me.isBlocked(q.other, user)
   }
 
+  @AllowBanned() // Apple 1.2 UGC safety — blocking a harasser is a safety right
   @Post('blocks')
   @HttpCode(204)
   blockUser(@CurrentUser() user: AuthPrincipal, @Body() body: BlockUserBodyDto): Promise<void> {
     return this.me.blockUser(body.blocked_id, body.reason ?? null, user)
   }
 
+  @AllowBanned() // safety housekeeping
   @Delete('blocks/:blockedId')
   @HttpCode(204)
   unblockUser(
@@ -228,6 +239,7 @@ export class MeController {
   }
 
   // ── GDPR (Wave F) — delete account + export data ──────────────────────────
+  @AllowBanned() // GDPR right to erasure — a banned user must be able to delete
   @Delete()
   @HttpCode(204)
   deleteAccount(@CurrentUser() user: AuthPrincipal): Promise<void> {
